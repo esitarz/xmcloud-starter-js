@@ -17,7 +17,22 @@ const readTenantId = (): string => {
   );
 };
 
+const readCatalogId = (): string | undefined => {
+  const raw =
+    process.env.LOCAL_ORDERCLOUD_CATALOG_ID ||
+    process.env.ORDERCLOUD_CATALOG_ID ||
+    process.env.NEXT_PUBLIC_ORDERCLOUD_CATALOG_ID;
+
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = raw.trim();
+  return value.length > 0 ? value : undefined;
+};
+
 export const commerceDispatcherConfig = {
   proxyBaseUrl: readProxyBaseUrl(),
   tenantId: readTenantId(),
+  catalogId: readCatalogId(),
 };

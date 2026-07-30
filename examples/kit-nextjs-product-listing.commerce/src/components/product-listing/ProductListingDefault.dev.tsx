@@ -36,6 +36,13 @@ const CommerceProductCard = ({
         <h3 className="text-secondary-foreground text-2xl font-semibold" itemProp="name">
           {product.name}
         </h3>
+        {(product.brand || product.category) && (
+          <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
+            {product.brand}
+            {product.brand && product.category ? ' · ' : ''}
+            {product.category}
+          </p>
+        )}
         {product.description && (
           <p className="text-muted-foreground text-base font-light" itemProp="description">
             {product.description}

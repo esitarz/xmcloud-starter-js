@@ -3,6 +3,8 @@ export type CommerceProduct = {
   name: string;
   description?: string;
   imageUrl?: string;
+  brand?: string;
+  category?: string;
   price?: number;
   currency?: string;
 };

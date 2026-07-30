@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dispatchToLocalProxy, type DispatchPayload } from '@/lib/commerce/dispatcher/service';
+import { commerceDispatcherConfig } from '@/lib/commerce/dispatcher/config';
+import { commerceAuthConfig } from '@/lib/commerce/auth/config';
 import type { CommerceProduct, CommerceProductList } from '@/lib/commerce/products';
 
 export const dynamic = 'force-dynamic';
@@ -63,13 +65,17 @@ const toCommerceProduct = (value: unknown): CommerceProduct | undefined => {
 
   const xp = asRecord(product.xp);
   const price = getPrice(product.PriceSchedule ?? product.DefaultPriceSchedule);
+  const xpPrice = asNumber(xp?.price);
 
   return {
     id,
     name,
     description: asString(product.Description),
     imageUrl: asString(product.ImageUrl) ?? asString(xp?.imageUrl) ?? asString(xp?.ImageUrl),
-    ...price,
+    brand: asString(xp?.brand),
+    category: asString(xp?.category),
+    price: price.price ?? xpPrice,
+    currency: price.currency,
   };
 };
 
@@ -102,8 +108,14 @@ const getProxyErrorMessage = (body: string, status: number): string => {
     const payload = JSON.parse(body) as {
       Message?: unknown;
       Errors?: Array<{ Message?: unknown }>;
+      error?: unknown;
+      error_description?: unknown;
     };
-    const message = asString(payload.Message) ?? asString(payload.Errors?.[0]?.Message);
+    const message =
+      asString(payload.Message) ??
+      asString(payload.Errors?.[0]?.Message) ??
+      asString(payload.error_description) ??
+      asString(payload.error);
 
     if (message) {
       return `OrderCloud request failed with status ${status}: ${message}`;
@@ -116,12 +128,19 @@ const getProxyErrorMessage = (body: string, status: number): string => {
 };
 
 const getAccessToken = async (): Promise<string> => {
+  const params = new URLSearchParams();
+  params.set('grant_type', 'client_credentials');
+
+  if (commerceAuthConfig.anonymousScope) {
+    params.set('scope', commerceAuthConfig.anonymousScope);
+  }
+
   const response = await dispatchToLocalProxy(
     createPayload(
       `${PROXY_ORIGIN}/oauth/token`,
       'POST',
       { 'Content-Type': 'application/x-www-form-urlencoded' },
-      'grant_type=client_credentials'
+      params.toString()
     )
   );
 
@@ -142,10 +161,18 @@ const getAccessToken = async (): Promise<string> => {
 export async function GET(): Promise<NextResponse<CommerceProductList | { error: string }>> {
   try {
     const accessToken = await getAccessToken();
+    const catalogId = commerceDispatcherConfig.catalogId;
+    const meEndpoint = `${PROXY_ORIGIN}/v1/me/products`;
+    const catalogScopedEndpoint = catalogId
+      ? `${meEndpoint}?catalogID=${encodeURIComponent(catalogId)}`
+      : meEndpoint;
+
+    const requestHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+    };
+
     const response = await dispatchToLocalProxy(
-      createPayload(`${PROXY_ORIGIN}/v1/me/products`, 'GET', {
-        Authorization: `Bearer ${accessToken}`,
-      })
+      createPayload(catalogScopedEndpoint, 'GET', requestHeaders)
     );
 
     if (response.status < 200 || response.status >= 300) {
