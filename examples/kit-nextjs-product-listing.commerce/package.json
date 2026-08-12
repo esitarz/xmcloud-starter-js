@@ -104,6 +104,7 @@
     "sass": "^1.89.2",
     "sass-alias": "^1.0.5",
     "sonner": "^2.0.5",
+    "stripe": "^22.5.0",
     "tailwind-bootstrap-grid": "^6.0.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
