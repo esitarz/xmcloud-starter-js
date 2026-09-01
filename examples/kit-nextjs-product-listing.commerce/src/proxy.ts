@@ -22,6 +22,7 @@ const locale = new LocaleProxy({
    * List of sites for site resolver to work with
    */
   sites,
+  defaultLanguage: scConfig.defaultLanguage,
   /**
    * List of all supported locales configured in routing.ts
    */
