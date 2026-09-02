@@ -3,7 +3,7 @@ jest.mock('@/lib/commerce/dispatcher/service', () => ({
 }));
 
 import { dispatchToLocalProxy } from '@/lib/commerce/dispatcher/service';
-import { getCart } from '@/lib/commerce/cart/service';
+import { addCartItem, getCart, removeCartItem, updateCartItem } from '@/lib/commerce/cart/service';
 
 const mockDispatchToLocalProxy = dispatchToLocalProxy as jest.MockedFunction<
   typeof dispatchToLocalProxy
@@ -73,6 +73,60 @@ describe('cart service', () => {
 
     await expect(getCart('shopper-token')).rejects.toThrow(
       'OrderCloud cart request failed with status 401'
+    );
+  });
+
+  test('adds a product with quantity only through the buyer proxy', async () => {
+    mockDispatchToLocalProxy.mockResolvedValue({
+      status: 201,
+      contentType: 'application/json',
+      body: '',
+    });
+
+    await addCartItem({ orderId: 'order/1', productId: 'product-1', quantity: 2 }, 'shopper-token');
+
+    expect(mockDispatchToLocalProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentRequest: expect.objectContaining({
+          url: 'https://local.test/storefront/v1/me/orders/order%2F1/lineitems',
+          method: 'POST',
+          body: JSON.stringify({ ProductID: 'product-1', Quantity: 2 }),
+        }),
+      })
+    );
+  });
+
+  test('updates and removes a line item through buyer-scoped OrderCloud paths', async () => {
+    mockDispatchToLocalProxy.mockResolvedValue({
+      status: 200,
+      contentType: 'application/json',
+      body: '',
+    });
+
+    await updateCartItem(
+      { orderId: 'order-1', lineItemId: 'line/1', quantity: 3 },
+      'shopper-token'
+    );
+    await removeCartItem('order-1', 'line/1', 'shopper-token');
+
+    expect(mockDispatchToLocalProxy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        currentRequest: expect.objectContaining({
+          url: 'https://local.test/storefront/v1/me/orders/order-1/lineitems/line%2F1',
+          method: 'PATCH',
+          body: JSON.stringify({ Quantity: 3 }),
+        }),
+      })
+    );
+    expect(mockDispatchToLocalProxy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        currentRequest: expect.objectContaining({
+          url: 'https://local.test/storefront/v1/me/orders/order-1/lineitems/line%2F1',
+          method: 'DELETE',
+        }),
+      })
     );
   });
 });

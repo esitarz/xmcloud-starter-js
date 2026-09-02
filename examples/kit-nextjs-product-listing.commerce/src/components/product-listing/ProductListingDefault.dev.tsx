@@ -1,7 +1,7 @@
 'use client';
 
 import { Text } from '@sitecore-content-sdk/nextjs';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useEffect, useMemo, useState } from 'react';
 import { NoDataFallback } from '@/utils/NoDataFallback';
 import { Default as AnimatedSection } from '@/components/animated-section/AnimatedSection.dev';
 import { ProductListingProps, ProductItemProps } from './product-listing.props';
@@ -16,9 +16,13 @@ import type { CommerceProduct, CommerceProductList } from '@/lib/commerce/produc
 const CommerceProductCard = ({
   product,
   prefersReducedMotion,
+  isAdding,
+  onAddToCart,
 }: {
   product: CommerceProduct;
   prefersReducedMotion: boolean;
+  isAdding: boolean;
+  onAddToCart: (productId: string) => void;
 }) => (
   <CardSpotlight className="h-full w-full" prefersReducedMotion={prefersReducedMotion}>
     <article
@@ -55,6 +59,14 @@ const CommerceProductCard = ({
           </p>
         )}
       </div>
+      <button
+        type="button"
+        className="border-primary text-primary hover:bg-primary focus-visible:ring-primary mt-auto border px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={() => onAddToCart(product.id)}
+        disabled={isAdding}
+      >
+        {isAdding ? 'Adding...' : 'Add to cart'}
+      </button>
     </article>
   </CardSpotlight>
 );
@@ -64,6 +76,8 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
   const [activeCard, setActiveCard] = useState<string | null>(null);
   const [commerceProducts, setCommerceProducts] = useState<CommerceProduct[] | null>(null);
   const [commerceError, setCommerceError] = useState<string | null>(null);
+  const [addingProductId, setAddingProductId] = useState<string | null>(null);
+  const [cartMessage, setCartMessage] = useState<string | null>(null);
   const { fields, isPageEditing } = props;
   const { products, title, viewAllLink } = fields?.data?.datasource ?? {};
 
@@ -94,6 +108,43 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
   }, []);
 
   const displayProducts = commerceProducts ?? products?.targetItems?.slice(0, 3) ?? [];
+
+  const addToCart = async (productId: string): Promise<void> => {
+    setAddingProductId(productId);
+    setCartMessage(null);
+
+    try {
+      let cartResponse = await fetch('/api/commerce/cart');
+
+      if (cartResponse.status === 401) {
+        const anonymousResponse = await fetch('/api/commerce/auth/anonymous', { method: 'POST' });
+        if (!anonymousResponse.ok) throw new Error('Unable to start a shopper session');
+        cartResponse = await fetch('/api/commerce/cart');
+      }
+
+      const cartPayload = (await cartResponse.json()) as { id?: string; error?: string };
+      if (!cartResponse.ok || !cartPayload.id) {
+        throw new Error(cartPayload.error || 'Unable to load cart');
+      }
+
+      const mutationResponse = await fetch('/api/commerce/cart/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: cartPayload.id, productId, quantity: 1 }),
+      });
+      const mutationPayload = (await mutationResponse.json()) as { error?: string };
+
+      if (!mutationResponse.ok) {
+        throw new Error(mutationPayload.error || 'Unable to add item to cart');
+      }
+
+      startTransition(() => setCartMessage('Added to cart'));
+    } catch (error) {
+      setCartMessage(error instanceof Error ? error.message : 'Unable to add item to cart');
+    } finally {
+      setAddingProductId(null);
+    }
+  };
 
   // Generate JSON-LD structured data for products (must be at top level)
   const productSchemas = useMemo(() => {
@@ -186,6 +237,7 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
             {commerceProducts === null && !commerceError && displayProducts.length === 0 && (
               <p className="text-muted-foreground col-span-full text-base">Loading products...</p>
             )}
+            {cartMessage && <p className="text-muted-foreground col-span-full text-sm">{cartMessage}</p>}
             {/* Left column - offset by 50% */}
             {leftColumnProducts.length > 0 && (
               <div className="@md:mt-1/2 @md:gap-[60px] flex flex-col gap-[40px]">
@@ -206,7 +258,12 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
                       onBlur={() => setActiveCard(null)}
                     >
                       {'id' in product ? (
-                        <CommerceProductCard product={product} prefersReducedMotion={isReducedMotion} />
+                        <CommerceProductCard
+                          product={product}
+                          prefersReducedMotion={isReducedMotion}
+                          isAdding={addingProductId === product.id}
+                          onAddToCart={addToCart}
+                        />
                       ) : (
                         <ProductListingCard
                           product={product}
@@ -240,7 +297,12 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
                       onBlur={() => setActiveCard(null)}
                     >
                       {'id' in product ? (
-                        <CommerceProductCard product={product} prefersReducedMotion={isReducedMotion} />
+                        <CommerceProductCard
+                          product={product}
+                          prefersReducedMotion={isReducedMotion}
+                          isAdding={addingProductId === product.id}
+                          onAddToCart={addToCart}
+                        />
                       ) : (
                         <ProductListingCard
                           product={product}

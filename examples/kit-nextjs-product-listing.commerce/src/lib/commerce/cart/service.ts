@@ -1,6 +1,6 @@
 import 'server-only';
 import { dispatchToLocalProxy, type DispatchPayload } from '@/lib/commerce/dispatcher/service';
-import type { CommerceCart } from './types';
+import type { AddCartItemInput, CommerceCart, UpdateCartItemInput } from './types';
 
 const PROXY_ORIGIN = 'https://local.test/storefront';
 
@@ -70,4 +70,65 @@ export const getCart = async (shopperToken: string): Promise<CommerceCart> => {
   }
 
   return parseCart(response.body);
+};
+
+const dispatchCartMutation = async (
+  shopperToken: string,
+  url: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: Record<string, unknown>
+): Promise<void> => {
+  const response = await dispatchToLocalProxy({
+    currentRequest: {
+      url,
+      method,
+      headers: {
+        Authorization: `Bearer ${shopperToken}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    },
+    traceType: 'none',
+    currentStep: 'nextjs-cart-mutation',
+  });
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`OrderCloud cart mutation failed with status ${response.status}`);
+  }
+};
+
+export const addCartItem = async (input: AddCartItemInput, shopperToken: string): Promise<void> => {
+  await dispatchCartMutation(
+    shopperToken,
+    `${PROXY_ORIGIN}/v1/me/orders/${encodeURIComponent(input.orderId)}/lineitems`,
+    'POST',
+    {
+      ProductID: input.productId,
+      Quantity: input.quantity,
+    }
+  );
+};
+
+export const updateCartItem = async (
+  input: UpdateCartItemInput,
+  shopperToken: string
+): Promise<void> => {
+  await dispatchCartMutation(
+    shopperToken,
+    `${PROXY_ORIGIN}/v1/me/orders/${encodeURIComponent(input.orderId)}/lineitems/${encodeURIComponent(input.lineItemId)}`,
+    'PATCH',
+    { Quantity: input.quantity }
+  );
+};
+
+export const removeCartItem = async (
+  orderId: string,
+  lineItemId: string,
+  shopperToken: string
+): Promise<void> => {
+  await dispatchCartMutation(
+    shopperToken,
+    `${PROXY_ORIGIN}/v1/me/orders/${encodeURIComponent(orderId)}/lineitems/${encodeURIComponent(lineItemId)}`,
+    'DELETE'
+  );
 };

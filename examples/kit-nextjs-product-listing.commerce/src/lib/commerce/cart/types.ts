@@ -7,3 +7,15 @@ export interface CommerceCart {
   total?: number;
   isCalculated: boolean;
 }
+
+export interface AddCartItemInput {
+  orderId: string;
+  productId: string;
+  quantity: number;
+}
+
+export interface UpdateCartItemInput {
+  orderId: string;
+  lineItemId: string;
+  quantity: number;
+}
