@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAuthTokenStore } from '@/lib/commerce/auth/session';
+import { readBearerToken } from '@/lib/commerce/auth/bearer-token';
 import { getCheckoutStatus } from '@/lib/commerce/checkout/service';
 import { CheckoutServiceError } from '@/lib/commerce/checkout/types';
 
@@ -9,7 +9,7 @@ type RouteContext = {
   params: Promise<{ attemptId: string }>;
 };
 
-export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function GET(request: NextRequest, context: RouteContext): Promise<NextResponse> {
   const { attemptId } = await context.params;
   const normalizedAttemptId = attemptId.trim();
 
@@ -17,7 +17,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
     return NextResponse.json({ error: 'attemptId is required' }, { status: 400 });
   }
 
-  const shopperToken = await createAuthTokenStore().read();
+  const shopperToken = readBearerToken(request);
 
   if (!shopperToken) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });

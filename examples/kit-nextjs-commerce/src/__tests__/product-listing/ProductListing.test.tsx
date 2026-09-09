@@ -12,6 +12,16 @@ import {
   productListingPropsNoFields,
 } from './ProductListing.mockProps';
 
+const mockProductsService = {
+  list: jest.fn().mockResolvedValue({ items: [] }),
+};
+const mockCartService = {
+  get: jest.fn(),
+  addItem: jest.fn().mockResolvedValue(undefined),
+  updateItem: jest.fn(),
+  removeItem: jest.fn(),
+};
+
 // Mock dependencies
 jest.mock('@sitecore-content-sdk/nextjs', () => ({
   Text: ({ children, field, tag: Tag = 'span', className, ...props }: any) => (
@@ -43,12 +53,21 @@ jest.mock('next-intl', () => ({
     selectOrdinal: jest.fn(),
     list: jest.fn(),
   }),
-  IntlProvider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
-  NextIntlClientProvider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  IntlProvider: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  NextIntlClientProvider: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
 }));
 
 jest.mock('../../hooks/use-match-media', () => ({
   useMatchMedia: (query: string) => query.includes('prefers-reduced-motion'),
+}));
+
+jest.mock('@/contexts/OrderCloudContext', () => ({
+  useOrderCloud: () => ({
+    products: mockProductsService,
+    cart: mockCartService,
+  }),
 }));
 
 jest.mock('../../components/animated-section/AnimatedSection.dev', () => ({

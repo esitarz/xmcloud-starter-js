@@ -1,35 +1,24 @@
-jest.mock('@/lib/commerce/dispatcher/service', () => ({
-  dispatchToLocalProxy: jest.fn(),
-}));
-
-import { dispatchToLocalProxy } from '@/lib/commerce/dispatcher/service';
-import { addCartItem, getCart, removeCartItem, updateCartItem } from '@/lib/commerce/cart/service';
-
-const mockDispatchToLocalProxy = dispatchToLocalProxy as jest.MockedFunction<
-  typeof dispatchToLocalProxy
->;
+import { CartService } from '@/lib/commerce/cart/service';
+import type { CommerceRequest } from '@/lib/commerce/client';
 
 describe('cart service', () => {
-  beforeEach(() => {
-    mockDispatchToLocalProxy.mockReset();
-  });
+  const request = jest.fn() as jest.MockedFunction<CommerceRequest>;
+  const cart = new CartService(request);
 
-  test('reads the current cart through the local OrderCloud proxy', async () => {
-    mockDispatchToLocalProxy.mockResolvedValue({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        ID: 'order-1',
-        Status: 'Unsubmitted',
-        Currency: 'USD',
-        Subtotal: 24.5,
-        TaxCost: 2.45,
-        Total: 26.95,
-        IsCalculated: true,
-      }),
+  beforeEach(() => request.mockReset());
+
+  test('reads and maps the current cart through the authenticated proxy client', async () => {
+    request.mockResolvedValue({
+      ID: 'order-1',
+      Status: 'Unsubmitted',
+      Currency: 'USD',
+      Subtotal: 24.5,
+      TaxCost: 2.45,
+      Total: 26.95,
+      IsCalculated: true,
     });
 
-    await expect(getCart('shopper-token')).resolves.toEqual({
+    await expect(cart.get()).resolves.toEqual({
       id: 'order-1',
       status: 'Unsubmitted',
       currency: 'USD',
@@ -38,95 +27,53 @@ describe('cart service', () => {
       total: 26.95,
       isCalculated: true,
     });
-
-    expect(mockDispatchToLocalProxy).toHaveBeenCalledWith({
-      currentRequest: {
-        url: 'https://local.test/storefront/v1/me/cart',
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer shopper-token',
-        },
-      },
-      traceType: 'none',
-      currentStep: 'nextjs-cart-read',
-    });
+    expect(request).toHaveBeenCalledWith('/v1/cart');
   });
 
   test('rejects non-cart OrderCloud responses', async () => {
-    mockDispatchToLocalProxy.mockResolvedValue({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ ID: 'order-1', Status: 'Submitted' }),
-    });
-
-    await expect(getCart('shopper-token')).rejects.toThrow(
+    request.mockResolvedValue({ ID: 'order-1', Status: 'Submitted' });
+    await expect(cart.get()).rejects.toThrow(
       'OrderCloud cart response was not an unsubmitted order'
     );
   });
 
-  test('includes upstream failure status without leaking response content', async () => {
-    mockDispatchToLocalProxy.mockResolvedValue({
-      status: 401,
-      contentType: 'application/json',
-      body: JSON.stringify({ Message: 'token details' }),
-    });
+  test('maps a cart that has not yet been assigned an order ID', async () => {
+    request.mockResolvedValue({ ID: null, Status: null });
 
-    await expect(getCart('shopper-token')).rejects.toThrow(
-      'OrderCloud cart request failed with status 401'
-    );
+    await expect(cart.get()).resolves.toEqual({
+      status: 'Unsubmitted',
+      isCalculated: false,
+    });
   });
 
-  test('adds a product with quantity only through the buyer proxy', async () => {
-    mockDispatchToLocalProxy.mockResolvedValue({
-      status: 201,
-      contentType: 'application/json',
-      body: '',
+  test('adds a product through a buyer-scoped proxy path', async () => {
+    request.mockResolvedValue(undefined);
+    await cart.addItem({ productId: 'product-1', quantity: 2 });
+
+    expect(request).toHaveBeenCalledWith('/v1/cart/lineitems', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ProductID: 'product-1', Quantity: 2 }),
     });
-
-    await addCartItem({ orderId: 'order/1', productId: 'product-1', quantity: 2 }, 'shopper-token');
-
-    expect(mockDispatchToLocalProxy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        currentRequest: expect.objectContaining({
-          url: 'https://local.test/storefront/v1/me/orders/order%2F1/lineitems',
-          method: 'POST',
-          body: JSON.stringify({ ProductID: 'product-1', Quantity: 2 }),
-        }),
-      })
-    );
   });
 
-  test('updates and removes a line item through buyer-scoped OrderCloud paths', async () => {
-    mockDispatchToLocalProxy.mockResolvedValue({
-      status: 200,
-      contentType: 'application/json',
-      body: '',
+  test('updates and removes a line item through buyer-scoped proxy paths', async () => {
+    request.mockResolvedValue(undefined);
+    await cart.updateItem({
+      lineItemId: 'line/1',
+      quantity: 3,
     });
+    await cart.removeItem('line/1');
 
-    await updateCartItem(
-      { orderId: 'order-1', lineItemId: 'line/1', quantity: 3 },
-      'shopper-token'
-    );
-    await removeCartItem('order-1', 'line/1', 'shopper-token');
-
-    expect(mockDispatchToLocalProxy).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        currentRequest: expect.objectContaining({
-          url: 'https://local.test/storefront/v1/me/orders/order-1/lineitems/line%2F1',
-          method: 'PATCH',
-          body: JSON.stringify({ Quantity: 3 }),
-        }),
-      })
-    );
-    expect(mockDispatchToLocalProxy).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        currentRequest: expect.objectContaining({
-          url: 'https://local.test/storefront/v1/me/orders/order-1/lineitems/line%2F1',
-          method: 'DELETE',
-        }),
-      })
-    );
+    expect(request).toHaveBeenNthCalledWith(1, '/v1/cart/lineitems/line%2F1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Quantity: 3 }),
+    });
+    expect(request).toHaveBeenNthCalledWith(2, '/v1/cart/lineitems/line%2F1', {
+      method: 'DELETE',
+      headers: undefined,
+      body: undefined,
+    });
   });
 });

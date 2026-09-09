@@ -10,6 +10,7 @@ import scConfig from 'sitecore.config';
 import components from '.sitecore/component-map.client';
 import { ThemeProvider } from '@/components/theme-provider/theme-provider.dev';
 import { VideoProvider } from './contexts/VideoContext';
+import { OrderCloudProvider } from './contexts/OrderCloudContext';
 
 export default function Providers({
   children,
@@ -28,6 +29,7 @@ export default function Providers({
       loadImportMap={() => import('.sitecore/import-map.client')}
     >
       <ComponentPropsContext value={componentProps}>
+        <OrderCloudProvider>
           <VideoProvider>
             <ThemeProvider
               attribute="class"
@@ -39,7 +41,8 @@ export default function Providers({
               {children}
             </ThemeProvider>
           </VideoProvider>
-        </ComponentPropsContext>
-      </SitecoreProvider>
+        </OrderCloudProvider>
+      </ComponentPropsContext>
+    </SitecoreProvider>
   );
 }

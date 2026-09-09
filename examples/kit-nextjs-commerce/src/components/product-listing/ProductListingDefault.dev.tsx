@@ -11,7 +11,8 @@ import { useMatchMedia } from '@/hooks/use-match-media';
 import { cn } from '@/lib/utils';
 import { generateProductSchema } from '@/lib/structured-data/schema';
 import { StructuredData } from '@/components/structured-data/StructuredData';
-import type { CommerceProduct, CommerceProductList } from '@/lib/commerce/products';
+import type { CommerceProduct } from '@/lib/commerce/products';
+import { useOrderCloud } from '@/contexts/OrderCloudContext';
 
 const CommerceProductCard = ({
   product,
@@ -53,7 +54,12 @@ const CommerceProductCard = ({
           </p>
         )}
         {product.price !== undefined && (
-          <p className="text-muted-foreground text-base font-light" itemProp="offers" itemScope itemType="https://schema.org/Offer">
+          <p
+            className="text-muted-foreground text-base font-light"
+            itemProp="offers"
+            itemScope
+            itemType="https://schema.org/Offer"
+          >
             <span itemProp="price">{product.price}</span>
             {product.currency && <meta itemProp="priceCurrency" content={product.currency} />}
           </p>
@@ -72,6 +78,7 @@ const CommerceProductCard = ({
 );
 
 export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
+  const { products: productsService, cart } = useOrderCloud();
   const isReducedMotion = useMatchMedia('(prefers-reduced-motion: reduce)');
   const [activeCard, setActiveCard] = useState<string | null>(null);
   const [commerceProducts, setCommerceProducts] = useState<CommerceProduct[] | null>(null);
@@ -86,26 +93,22 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
 
     const loadProducts = async () => {
       try {
-        const response = await fetch('/api/commerce/products', { signal: controller.signal });
-        const payload = (await response.json()) as CommerceProductList & { error?: string };
-
-        if (!response.ok) {
-          throw new Error(payload.error || 'Failed to load OrderCloud products');
-        }
-
+        const payload = await productsService.list({ signal: controller.signal });
         setCommerceProducts(payload.items);
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
         }
 
-        setCommerceError(error instanceof Error ? error.message : 'Failed to load OrderCloud products');
+        setCommerceError(
+          error instanceof Error ? error.message : 'Failed to load OrderCloud products'
+        );
       }
     };
 
     void loadProducts();
     return () => controller.abort();
-  }, []);
+  }, [productsService]);
 
   const displayProducts = commerceProducts ?? products?.targetItems?.slice(0, 3) ?? [];
 
@@ -114,29 +117,7 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
     setCartMessage(null);
 
     try {
-      let cartResponse = await fetch('/api/commerce/cart');
-
-      if (cartResponse.status === 401) {
-        const anonymousResponse = await fetch('/api/commerce/auth/anonymous', { method: 'POST' });
-        if (!anonymousResponse.ok) throw new Error('Unable to start a shopper session');
-        cartResponse = await fetch('/api/commerce/cart');
-      }
-
-      const cartPayload = (await cartResponse.json()) as { id?: string; error?: string };
-      if (!cartResponse.ok || !cartPayload.id) {
-        throw new Error(cartPayload.error || 'Unable to load cart');
-      }
-
-      const mutationResponse = await fetch('/api/commerce/cart/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: cartPayload.id, productId, quantity: 1 }),
-      });
-      const mutationPayload = (await mutationResponse.json()) as { error?: string };
-
-      if (!mutationResponse.ok) {
-        throw new Error(mutationPayload.error || 'Unable to add item to cart');
-      }
+      await cart.addItem({ productId, quantity: 1 });
 
       startTransition(() => setCartMessage('Added to cart'));
     } catch (error) {
@@ -150,7 +131,9 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
   const productSchemas = useMemo(() => {
     return displayProducts.map((product) => {
       const isCommerceProduct = 'id' in product;
-      const productName = isCommerceProduct ? product.name : product.productName?.jsonValue?.value || '';
+      const productName = isCommerceProduct
+        ? product.name
+        : product.productName?.jsonValue?.value || '';
       const productImage = isCommerceProduct
         ? product.imageUrl || ''
         : product.productThumbnail?.jsonValue?.value?.src || '';
@@ -193,9 +176,13 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
     };
     // Split products into two columns
     const leftColumnProducts =
-      displayProducts.filter((_: ProductItemProps | CommerceProduct, index: number) => index % 2 === 1) || [];
+      displayProducts.filter(
+        (_: ProductItemProps | CommerceProduct, index: number) => index % 2 === 1
+      ) || [];
     const rightColumnProducts =
-      displayProducts.filter((_: ProductItemProps | CommerceProduct, index: number) => index % 2 === 0) || [];
+      displayProducts.filter(
+        (_: ProductItemProps | CommerceProduct, index: number) => index % 2 === 0
+      ) || [];
 
     return (
       <section
@@ -206,7 +193,11 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
       >
         {/* JSON-LD structured data for products */}
         {productSchemas.map((schema, index) => (
-          <StructuredData key={`product-schema-${index}`} id={`product-schema-${index}`} data={schema} />
+          <StructuredData
+            key={`product-schema-${index}`}
+            id={`product-schema-${index}`}
+            data={schema}
+          />
         ))}
         <div className="@md:px-6 @md:py-20 @lg:py-28 mx-auto max-w-screen-xl px-4 py-12">
           <AnimatedSection
@@ -237,13 +228,19 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
             {commerceProducts === null && !commerceError && displayProducts.length === 0 && (
               <p className="text-muted-foreground col-span-full text-base">Loading products...</p>
             )}
-            {cartMessage && <p className="text-muted-foreground col-span-full text-sm">{cartMessage}</p>}
+            {cartMessage && (
+              <p className="text-muted-foreground col-span-full text-sm">{cartMessage}</p>
+            )}
             {/* Left column - offset by 50% */}
             {leftColumnProducts.length > 0 && (
               <div className="@md:mt-1/2 @md:gap-[60px] flex flex-col gap-[40px]">
                 {leftColumnProducts.map((product, index) => (
                   <AnimatedSection
-                    key={'id' in product ? product.id : JSON.stringify(`${product.productName}-${index}`)}
+                    key={
+                      'id' in product
+                        ? product.id
+                        : JSON.stringify(`${product.productName}-${index}`)
+                    }
                     direction="up"
                     delay={index * 150}
                     duration={400}
@@ -282,7 +279,11 @@ export const ProductListingDefault: React.FC<ProductListingProps> = (props) => {
               <div className="@md:gap-[60px] flex flex-col gap-[40px]">
                 {rightColumnProducts.map((product, index) => (
                   <AnimatedSection
-                    key={'id' in product ? product.id : JSON.stringify(`${product.productName}-${index}`)}
+                    key={
+                      'id' in product
+                        ? product.id
+                        : JSON.stringify(`${product.productName}-${index}`)
+                    }
                     direction="up"
                     delay={index * 150}
                     duration={400}

@@ -1,5 +1,5 @@
 export interface CommerceCart {
-  id: string;
+  id?: string;
   status: 'Unsubmitted';
   currency?: string;
   subtotal?: number;
@@ -9,13 +9,11 @@ export interface CommerceCart {
 }
 
 export interface AddCartItemInput {
-  orderId: string;
   productId: string;
   quantity: number;
 }
 
 export interface UpdateCartItemInput {
-  orderId: string;
   lineItemId: string;
   quantity: number;
 }

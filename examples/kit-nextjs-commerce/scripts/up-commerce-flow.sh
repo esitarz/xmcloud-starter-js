@@ -36,7 +36,7 @@ start_app() {
   fi
 
   echo "starting app on :$APP_PORT"
-  nohup /usr/bin/env -C "$ROOT_DIR" npm run dev >"$LOG_DIR/app.log" 2>&1 &
+  nohup /usr/bin/env -C "$ROOT_DIR" NEXT_PUBLIC_ORDERCLOUD_PROXY_URL="$PROXY_URL/oc" npm run dev >"$LOG_DIR/app.log" 2>&1 &
   echo "$!" >"$LOG_DIR/app.pid"
 }
 

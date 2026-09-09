@@ -49,7 +49,6 @@ import * as SearchItemCommon from 'src/components/search-experience/search-compo
 import * as SearchInput from 'src/components/search-experience/search-components/SearchInput';
 import * as SearchError from 'src/components/search-experience/search-components/SearchError';
 import * as SearchEmptyResults from 'src/components/search-experience/search-components/SearchEmptyResults';
-import * as Index from 'src/components/search-experience/search-components/SearchItem/index';
 import * as SearchItemTitle from 'src/components/search-experience/search-components/SearchItem/SearchItemTitle';
 import * as SearchItemTags from 'src/components/search-experience/search-components/SearchItem/SearchItemTags';
 import * as SearchItemSummary from 'src/components/search-experience/search-components/SearchItem/SearchItemSummary';
@@ -57,6 +56,7 @@ import * as SearchItemSubTitle from 'src/components/search-experience/search-com
 import * as SearchItemLink from 'src/components/search-experience/search-components/SearchItem/SearchItemLink';
 import * as SearchItemImage from 'src/components/search-experience/search-components/SearchItem/SearchItemImage';
 import * as SearchItemCategory from 'src/components/search-experience/search-components/SearchItem/SearchItemCategory';
+import * as Index from 'src/components/search-experience/search-components/SearchItem/index';
 import * as PromoAnimatedImageRightdev from 'src/components/promo-animated/PromoAnimatedImageRight.dev';
 import * as PromoAnimatedDefaultdev from 'src/components/promo-animated/PromoAnimatedDefault.dev';
 import * as PromoAnimated from 'src/components/promo-animated/PromoAnimated';
@@ -89,8 +89,8 @@ import * as ImageGalleryFiftyFiftydev from 'src/components/image-gallery/ImageGa
 import * as ImageGalleryFeaturedImagedev from 'src/components/image-gallery/ImageGalleryFeaturedImage.dev';
 import * as ImageGallerydev from 'src/components/image-gallery/ImageGallery.dev';
 import * as ImageGallery from 'src/components/image-gallery/ImageGallery';
-import * as ImageOptimizationcontext from 'src/components/image/image-optimization.context';
 import * as ImageWrapperclient from 'src/components/image/ImageWrapper.client';
+import * as ImageOptimizationcontext from 'src/components/image/image-optimization.context';
 import * as Icon from 'src/components/icon/Icon';
 import * as HeroImageRightdev from 'src/components/hero/HeroImageRight.dev';
 import * as HeroImageBottomInsetdev from 'src/components/hero/HeroImageBottomInset.dev';
@@ -120,10 +120,6 @@ import * as FAQ from 'src/components/component-library/FAQ';
 import * as ContactSection from 'src/components/component-library/ContactSection';
 import * as Carousel from 'src/components/carousel/Carousel';
 import * as CardSpotlightdev from 'src/components/card-spotlight/card-spotlight.dev';
-import * as AuthRegisterDefaultdev from 'src/components/auth-register/AuthRegisterDefault.dev';
-import * as AuthProfileMeDefaultdev from 'src/components/auth-profile-me/AuthProfileMeDefault.dev';
-import * as AuthLoginDefaultdev from 'src/components/auth-login/AuthLoginDefault.dev';
-import * as AuthForgotPasswordDefaultdev from 'src/components/auth-forgot-password/AuthForgotPasswordDefault.dev';
 import * as ArticleHeader from 'src/components/article-header/ArticleHeader';
 import * as AnimatedSectiondev from 'src/components/animated-section/AnimatedSection.dev';
 import * as AlertBannerdev from 'src/components/alert-banner/AlertBanner.dev';
@@ -174,7 +170,6 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['SearchInput', { ...SearchInput }],
   ['SearchError', { ...SearchError }],
   ['SearchEmptyResults', { ...SearchEmptyResults }],
-  ['Index', { ...Index }],
   ['SearchItemTitle', { ...SearchItemTitle }],
   ['SearchItemTags', { ...SearchItemTags }],
   ['SearchItemSummary', { ...SearchItemSummary }],
@@ -182,6 +177,7 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['SearchItemLink', { ...SearchItemLink }],
   ['SearchItemImage', { ...SearchItemImage }],
   ['SearchItemCategory', { ...SearchItemCategory }],
+  ['Index', { ...Index }],
   ['PromoAnimatedImageRight', { ...PromoAnimatedImageRightdev }],
   ['PromoAnimatedDefault', { ...PromoAnimatedDefaultdev }],
   ['PromoAnimated', { ...PromoAnimated }],
@@ -213,8 +209,8 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['ImageGalleryFiftyFifty', { ...ImageGalleryFiftyFiftydev }],
   ['ImageGalleryFeaturedImage', { ...ImageGalleryFeaturedImagedev }],
   ['ImageGallery', { ...ImageGallerydev, ...ImageGallery }],
-  ['ImageOptimization', { ...ImageOptimizationcontext }],
   ['ImageWrapper', { ...ImageWrapperclient }],
+  ['ImageOptimization', { ...ImageOptimizationcontext }],
   ['Icon', { ...Icon }],
   ['HeroImageRight', { ...HeroImageRightdev }],
   ['HeroImageBottomInset', { ...HeroImageBottomInsetdev }],
@@ -243,10 +239,6 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['ContactSection', { ...ContactSection }],
   ['Carousel', { ...Carousel }],
   ['CardSpotlight', { ...CardSpotlightdev }],
-  ['AuthRegisterDefault', { ...AuthRegisterDefaultdev }],
-  ['AuthProfileMeDefault', { ...AuthProfileMeDefaultdev }],
-  ['AuthLoginDefault', { ...AuthLoginDefaultdev }],
-  ['AuthForgotPasswordDefault', { ...AuthForgotPasswordDefaultdev }],
   ['ArticleHeader', { ...ArticleHeader }],
   ['AnimatedSection', { ...AnimatedSectiondev }],
   ['AlertBanner', { ...AlertBannerdev }],

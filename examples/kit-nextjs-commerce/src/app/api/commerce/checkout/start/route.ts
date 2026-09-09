@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAuthTokenStore } from '@/lib/commerce/auth/session';
+import { readBearerToken } from '@/lib/commerce/auth/bearer-token';
 import { startCheckout } from '@/lib/commerce/checkout/service';
 import { CheckoutServiceError } from '@/lib/commerce/checkout/types';
 
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'orderId is required' }, { status: 400 });
   }
 
-  const shopperToken = await createAuthTokenStore().read();
+  const shopperToken = readBearerToken(request);
 
   if (!shopperToken) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
