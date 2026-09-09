@@ -19,7 +19,7 @@ const customJestConfig = {
     '^(\\.\\./)*\\.sitecore/component-map$': '<rootDir>/src/__mocks__/component-map.ts',
   },
   testMatch: [
-    '<rootDir>/src/__tests__/**/*.test.[jt]s?(x)',
+    '**/src/__tests__/**/*.test.[jt]s?(x)',
   ],
   transformIgnorePatterns: [
     'node_modules/(?!(?:@sitecore-content-sdk|@sitecore-feaas|lucide-react|change-case)/)',
