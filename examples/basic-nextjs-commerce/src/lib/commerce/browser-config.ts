@@ -9,18 +9,6 @@ export const DEFAULT_ORDERCLOUD_AUTH_COOKIE_NAME = 'oc_anonymous_token';
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/$/, '');
 
-const ensureBrowserCanReachProxy = (proxyUrl: URL): void => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  if (window.location.protocol === 'https:' && proxyUrl.protocol !== 'https:') {
-    throw new Error(
-      'Invalid NEXT_PUBLIC_ORDERCLOUD_PROXY_URL for HTTPS pages: expected an HTTPS proxy URL (for local dev use Wrangler tunnel/workers.dev URL ending with /oc)'
-    );
-  }
-};
-
 export const getOrderCloudAuthCookieName = (): string => {
   const cookieName =
     process.env.NEXT_PUBLIC_ORDERCLOUD_AUTH_COOKIE_NAME?.trim() ||
@@ -43,14 +31,11 @@ export const getCommerceBrowserConfig = (): CommerceBrowserConfig => {
     );
   }
 
-  let parsedProxyUrl: URL;
   try {
-    parsedProxyUrl = new URL(proxyBaseUrl);
+    new URL(proxyBaseUrl);
   } catch {
     throw new Error('Invalid NEXT_PUBLIC_ORDERCLOUD_PROXY_URL: expected an absolute URL');
   }
-
-  ensureBrowserCanReachProxy(parsedProxyUrl);
 
   return {
     proxyBaseUrl: normalizeBaseUrl(proxyBaseUrl),

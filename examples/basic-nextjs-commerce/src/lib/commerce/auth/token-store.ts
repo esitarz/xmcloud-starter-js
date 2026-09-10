@@ -1,7 +1,6 @@
 import { getOrderCloudAuthCookieName } from '../browser-config';
 
 const EXPIRATION_SKEW_MS = 60_000;
-const STORAGE_PREFIX = 'oc_token_store:';
 
 export interface StoredOrderCloudToken {
   accessToken: string;
@@ -18,59 +17,15 @@ const getCookieValue = (name: string): string | undefined => {
     ?.substring(name.length + 1);
 };
 
-const getStorageKey = (): string => `${STORAGE_PREFIX}${getOrderCloudAuthCookieName()}`;
-
-const readLocalValue = (): string | undefined => {
-  if (typeof window === 'undefined') return undefined;
-
-  try {
-    return window.localStorage.getItem(getStorageKey()) ?? undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const writeLocalValue = (value: string): void => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(getStorageKey(), value);
-  } catch {
-    // Ignore storage failures; cookie storage may still be available.
-  }
-};
-
-const clearLocalValue = (): void => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.removeItem(getStorageKey());
-  } catch {
-    // Ignore storage failures.
-  }
-};
-
-const getCookieAttributes = (maxAge: number): string => {
-  const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-
-  if (isSecure) {
-    return `Path=/; Max-Age=${maxAge}; SameSite=None; Secure`;
-  }
-
-  return `Path=/; Max-Age=${maxAge}; SameSite=Lax`;
-};
-
 export const clearStoredOrderCloudToken = (): void => {
   if (typeof document === 'undefined') return;
 
   const cookieName = getOrderCloudAuthCookieName();
-  clearLocalValue();
   document.cookie = `${cookieName}=; Path=/; Max-Age=0; SameSite=Lax`;
-  document.cookie = `${cookieName}=; Path=/; Max-Age=0; SameSite=None; Secure`;
 };
 
 export const readStoredOrderCloudToken = (now = Date.now()): StoredOrderCloudToken | null => {
-  const value = getCookieValue(getOrderCloudAuthCookieName()) ?? readLocalValue();
+  const value = getCookieValue(getOrderCloudAuthCookieName());
   if (!value) return null;
 
   try {
@@ -116,7 +71,6 @@ export const writeStoredOrderCloudToken = (
   };
   const encodedToken = encodeURIComponent(JSON.stringify(storedToken));
 
-  writeLocalValue(encodedToken);
-  document.cookie = `${getOrderCloudAuthCookieName()}=${encodedToken}; ${getCookieAttributes(maxAge)}`;
+  document.cookie = `${getOrderCloudAuthCookieName()}=${encodedToken}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
   return storedToken;
 };

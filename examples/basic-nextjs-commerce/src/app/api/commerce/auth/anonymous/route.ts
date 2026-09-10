@@ -86,10 +86,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       name: getOrderCloudAuthCookieName(),
       value: tokenCookie,
       httpOnly: false,
-      sameSite: request.nextUrl.protocol === 'https:' ? 'none' : 'lax',
+      sameSite: 'lax',
       path: '/',
       maxAge,
-      secure: request.nextUrl.protocol === 'https:',
+      secure: process.env.NODE_ENV === 'production',
     });
 
     return response;

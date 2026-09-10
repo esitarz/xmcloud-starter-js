@@ -4,6 +4,9 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const nextConfig: NextConfig = {
   // Allow specifying a distinct distDir when concurrently running app in a container
   distDir: process.env.NEXTJS_DIST_DIR || '.next',
+
+  // Allow local iframe/editor hosts to access Next.js dev resources (HMR websocket).
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   
   // Enable React Strict Mode
   reactStrictMode: true,
