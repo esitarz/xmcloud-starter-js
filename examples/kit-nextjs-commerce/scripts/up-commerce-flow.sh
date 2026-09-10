@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$ROOT_DIR/.logs"
 
 APP_URL="${APP_URL:-http://127.0.0.1:3000}"
+APP_HEALTH_URL="${APP_HEALTH_URL:-$APP_URL/test}"
 PROXY_URL="${PROXY_URL:-http://127.0.0.1:8795}"
 APP_PORT="${APP_PORT:-3000}"
 PROXY_PORT="${PROXY_PORT:-8795}"
@@ -53,7 +54,7 @@ wait_ready() {
       proxy_ok=1
     fi
 
-    if curl -sS "$APP_URL" >/dev/null 2>&1; then
+    if curl -sS "$APP_HEALTH_URL" >/dev/null 2>&1; then
       app_ok=1
     fi
 
@@ -73,6 +74,7 @@ wait_ready() {
 
 echo "root: $ROOT_DIR"
 echo "proxy dir: $PROXY_DIR"
+echo "app health url: $APP_HEALTH_URL"
 
 start_proxy
 start_app
