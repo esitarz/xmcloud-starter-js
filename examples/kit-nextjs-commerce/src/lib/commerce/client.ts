@@ -1,4 +1,5 @@
 import { getCommerceBrowserConfig } from './browser-config';
+import { readStoredOrderCloudToken } from './auth/token-store';
 
 export type CommerceRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -58,14 +59,10 @@ export const requestAnonymousOrderCloudToken = async (): Promise<{
   accessToken: string;
   expiresIn: number;
 }> => {
-  const config = getCommerceBrowserConfig();
-  const params = new URLSearchParams({ grant_type: 'client_credentials' });
-  if (config.anonymousScope) params.set('scope', config.anonymousScope);
-
-  const response = await fetch(`${config.proxyBaseUrl}/oauth/token`, {
+  const response = await fetch('/api/commerce/auth/anonymous', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   });
   const body = await parseResponseBody(response);
 
@@ -73,20 +70,29 @@ export const requestAnonymousOrderCloudToken = async (): Promise<{
     throw new CommerceProxyError(getErrorMessage(body, response.status), response.status);
   }
 
-  const token = body as { access_token?: unknown; expires_in?: unknown } | undefined;
-  if (
-    typeof token?.access_token !== 'string' ||
-    !token.access_token.trim() ||
-    typeof token.expires_in !== 'number' ||
-    !Number.isFinite(token.expires_in) ||
-    token.expires_in <= 0
-  ) {
-    throw new Error(
-      'OrderCloud token response did not include a valid access token and expiration'
-    );
+  if (body && typeof body === 'object') {
+    const payload = body as { accessToken?: unknown; expiresIn?: unknown };
+    if (
+      typeof payload.accessToken === 'string' &&
+      payload.accessToken.trim() &&
+      typeof payload.expiresIn === 'number' &&
+      Number.isFinite(payload.expiresIn) &&
+      payload.expiresIn > 0
+    ) {
+      return {
+        accessToken: payload.accessToken,
+        expiresIn: Math.max(1, Math.floor(payload.expiresIn)),
+      };
+    }
   }
 
-  return { accessToken: token.access_token, expiresIn: token.expires_in };
+  const storedToken = readStoredOrderCloudToken();
+  if (!storedToken) {
+    throw new Error('OrderCloud anonymous auth succeeded but no browser token was stored');
+  }
+
+  const expiresIn = Math.max(1, Math.floor((storedToken.expiresAt - Date.now()) / 1000));
+  return { accessToken: storedToken.accessToken, expiresIn };
 };
 
 export const requestOrderCloudProxy = async <T>(
