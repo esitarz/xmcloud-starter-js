@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 type ReadinessReport = {
   ready: boolean;
+  webhookReady: boolean;
   checks: {
     stripeSecretKey: boolean;
     stripeWebhookSecret: boolean;
@@ -53,13 +54,14 @@ export async function GET(): Promise<NextResponse<ReadinessReport>> {
     checks.stripeSecretKey &&
     checks.stripeWebhookSecret &&
     checks.stripeConnectedAccountId &&
-    checks.appUrl &&
-    checks.middlewareClientId &&
-    checks.middlewareClientSecret;
+    checks.appUrl;
+
+  const webhookReady = checks.middlewareClientId && checks.middlewareClientSecret;
 
   return NextResponse.json(
     {
       ready,
+      webhookReady,
       checks,
       notes,
     },
