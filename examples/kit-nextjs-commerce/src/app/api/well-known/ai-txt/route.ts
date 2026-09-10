@@ -46,7 +46,6 @@ Disallow: /sitecore/
 AI-Endpoint: ${siteUrl}/ai/summary.json
 AI-Endpoint: ${siteUrl}/ai/faq.json
 AI-Endpoint: ${siteUrl}/ai/service.json
-AI-Endpoint: ${siteUrl}/ai/markdown
 
 Sitemap: ${siteUrl}/sitemap-llm.xml
 Sitemap: ${siteUrl}/sitemap.xml

@@ -1,16 +1,13 @@
-'use client';
-import React from 'react';
+"use client";
+import React from "react";
 import {
   ComponentPropsCollection,
   ComponentPropsContext,
   Page,
   SitecoreProvider,
-} from '@sitecore-content-sdk/nextjs';
-import scConfig from 'sitecore.config';
-import components from '.sitecore/component-map.client';
-import { ThemeProvider } from '@/components/theme-provider/theme-provider.dev';
-import { VideoProvider } from './contexts/VideoContext';
-import { OrderCloudProvider } from './contexts/OrderCloudContext';
+} from "@sitecore-content-sdk/nextjs";
+import scConfig from "sitecore.config";
+import components from ".sitecore/component-map.client";
 
 export default function Providers({
   children,
@@ -26,22 +23,10 @@ export default function Providers({
       api={scConfig.api}
       componentMap={components}
       page={page}
-      loadImportMap={() => import('.sitecore/import-map.client')}
+      loadImportMap={() => import(".sitecore/import-map.client")}
     >
       <ComponentPropsContext value={componentProps}>
-        <OrderCloudProvider>
-          <VideoProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="light"
-              forcedTheme="light"
-              enableSystem={false}
-              disableTransitionOnChange
-            >
-              {children}
-            </ThemeProvider>
-          </VideoProvider>
-        </OrderCloudProvider>
+        {children}
       </ComponentPropsContext>
     </SitecoreProvider>
   );

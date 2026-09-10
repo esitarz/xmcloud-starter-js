@@ -1,18 +1,17 @@
-import { Suspense } from 'react';
-import { isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
-import { notFound } from 'next/navigation';
-import { draftMode, headers as nextHeaders } from 'next/headers';
-import { SiteInfo } from '@sitecore-content-sdk/nextjs';
-import sites from '.sitecore/sites.json';
-import { routing } from 'src/i18n/routing';
-import scConfig from 'sitecore.config';
-import client from 'src/lib/sitecore-client';
-import Layout, { RouteFields } from 'src/Layout';
-import components from '.sitecore/component-map';
-import Providers from 'src/Providers';
-import { NextIntlClientProvider } from 'next-intl';
-import { setRequestLocale } from 'next-intl/server';
-import { getBaseUrl } from 'lib/utils';
+import { isDesignLibraryPreviewData } from "@sitecore-content-sdk/nextjs/editing";
+import { notFound } from "next/navigation";
+import { draftMode, headers as nextHeaders } from "next/headers";
+import { SiteInfo } from "@sitecore-content-sdk/nextjs";
+import sites from ".sitecore/sites.json";
+import { routing } from "src/i18n/routing";
+import scConfig from "sitecore.config";
+import client from "src/lib/sitecore-client";
+import Layout, { RouteFields } from "src/Layout";
+import components from ".sitecore/component-map";
+import Providers from "src/Providers";
+import { NextIntlClientProvider } from "next-intl";
+import { setRequestLocale } from "next-intl/server";
+import { getBaseUrl } from "lib/utils";
 
 type PageProps = {
   params: Promise<{
@@ -23,46 +22,14 @@ type PageProps = {
   }>;
 };
 
-const resolvePageWithFallbackSites = async (
-  path: string[],
-  locale: string,
-  requestedSite: string
-) => {
-  const candidateSites =
-    process.env.NODE_ENV === 'development'
-      ? Array.from(
-          new Set([
-            requestedSite,
-            scConfig.defaultSite,
-            ...sites.map((candidate: SiteInfo) => candidate.name),
-          ])
-        ).filter((value): value is string => typeof value === 'string' && value.length > 0)
-      : [requestedSite];
-
-  for (const candidateSite of candidateSites) {
-    const candidatePage = await client.getPage(path, { site: candidateSite, locale });
-    if (candidatePage) {
-      return {
-        page: candidatePage,
-        resolvedSite: candidateSite,
-      };
-    }
-  }
-
-  return {
-    page: null,
-    resolvedSite: requestedSite,
-  };
-};
-
 export default async function Page({ params }: PageProps) {
   const { site, locale, path } = await params;
   const draft = await draftMode();
-  const baseUrl = getBaseUrl();
-  const routePath = path ?? [];
+
+  // Set site and locale to be available in src/i18n/request.ts for fetching the dictionary
+  setRequestLocale(`${site}_${locale}`);
 
   // Fetch the page data from Sitecore
-  let resolvedSite = site;
   let page;
   if (draft.isEnabled) {
     const headers = await nextHeaders();
@@ -73,13 +40,8 @@ export default async function Page({ params }: PageProps) {
       page = await client.getPreview(previewData);
     }
   } else {
-    const resolved = await resolvePageWithFallbackSites(routePath, locale, site);
-    page = resolved.page;
-    resolvedSite = resolved.resolvedSite;
+    page = await client.getPage(path ?? [], { site, locale });
   }
-
-  // Set site and locale to be available in src/i18n/request.ts for fetching the dictionary
-  setRequestLocale(`${resolvedSite}_${locale}`);
 
   // If the page is not found, return a 404
   if (!page) {
@@ -87,22 +49,25 @@ export default async function Page({ params }: PageProps) {
   }
 
   // Fetch the component data from Sitecore (Likely will be deprecated)
-  const componentProps = await client.getComponentData(page.layout, {}, components);
+  const componentProps = await client.getComponentData(
+    page.layout,
+    {},
+    components,
+  );
 
   return (
     <NextIntlClientProvider>
-      <Suspense fallback={null}>
-        <Providers page={page} componentProps={componentProps}>
-          <Layout page={page} baseUrl={baseUrl || undefined} />
-        </Providers>
-      </Suspense>
+      <Providers page={page} componentProps={componentProps}>
+        <Layout page={page} />
+      </Providers>
     </NextIntlClientProvider>
   );
 }
+
 // This function gets called at build and export time to determine
 // pages for SSG ("paths", as tokenized array).
 export const generateStaticParams = async () => {
-  if (process.env.NODE_ENV !== 'development' && scConfig.generateStaticPaths) {
+  if (process.env.NODE_ENV !== "development" && scConfig.generateStaticPaths) {
     // Filter sites to only include the sites this starter is designed to serve.
     // This prevents cross-site build errors when multiple starters share the same XM Cloud instance.
     const defaultSite = scConfig.defaultSite;
@@ -111,92 +76,54 @@ export const generateStaticParams = async () => {
           .filter((site: SiteInfo) => site.name === defaultSite)
           .map((site: SiteInfo) => site.name)
       : sites.map((site: SiteInfo) => site.name);
-
-    return await client.getAppRouterStaticParams(allowedSites, routing.locales.slice());
+    return await client.getAppRouterStaticParams(
+      allowedSites,
+      routing.locales.slice(),
+    );
   }
   return [];
 };
 
+// Metadata fields for the page.
 export const generateMetadata = async ({ params }: PageProps) => {
   const baseUrl = getBaseUrl();
 
   const { path, site, locale } = await params;
 
   // Canonical URL: base URL + content path only (no site/locale segments)
-  const pathSegment = path?.length ? `/${path.join('/')}` : '';
+  const pathSegment = path?.length ? `/${path.join("/")}` : "";
   const canonicalUrl = baseUrl ? `${baseUrl}${pathSegment}` : undefined;
 
   // The same call as for rendering the page. Should be cached by default react behavior
   const page = await client.getPage(path ?? [], { site, locale });
+  const fields = page?.layout.sitecore.route?.fields as RouteFields;
 
-  // Cast route fields once to the expected RouteFields shape to avoid accessing unknown {}
-  const routeFields = (page?.layout.sitecore.route?.fields ?? {}) as RouteFields;
-
-  // Extract metadata values with fallback chain
-  const metadataTitle =
-    routeFields?.metadataTitle?.value?.toString() ||
-    routeFields?.pageTitle?.value?.toString() ||
-    'Page';
-
-  const metadataDescription =
-    routeFields?.metadataDescription?.value?.toString() ||
-    routeFields?.pageSummary?.value?.toString() ||
-    'SYNC - Premium audio gear for professionals';
-
-  const ogTitle = routeFields?.ogTitle?.value?.toString() || metadataTitle;
-
-  const ogDescription = routeFields?.ogDescription?.value?.toString() || metadataDescription;
-
-  // Ensure image URL is absolute (HTTPS preferred)
-  const imageSource = routeFields?.ogImage?.value?.src || routeFields?.thumbnailImage?.value?.src;
-
-  const ogImageUrl = imageSource
-    ? imageSource.startsWith('http')
-      ? imageSource
-      : `${baseUrl}${imageSource.startsWith('/') ? '' : '/'}${imageSource}`
-    : undefined;
-
-  const pageUrl = canonicalUrl;
-
-  // Parse keywords from comma-separated string to array (for <meta name="keywords">)
-  const keywordsString = routeFields?.metadataKeywords?.value?.toString() || '';
-  const keywords = keywordsString ? keywordsString.split(',').map((k: string) => k.trim()) : [];
-
-  const metadataAuthor = routeFields?.metadataAuthor?.value?.toString() || 'Sitecore';
+  // Parse keywords from comma-separated string to array
+  const keywordsString = fields?.metadataKeywords?.value?.toString() || "";
+  const keywords = keywordsString
+    ? keywordsString.split(",").map((k: string) => k.trim())
+    : [];
 
   return {
-    title: metadataTitle,
-    description: metadataDescription,
-    authors: [{ name: metadataAuthor }],
-    ...(keywords.length > 0 && { keywords }),
+    title: fields?.Title?.value?.toString() || "Page",
+    description:
+      fields?.ogDescription?.value?.toString() ||
+      fields?.metadataDescription?.value?.toString() ||
+      "Sitecore Next.js Basic Example",
+    keywords,
     ...(canonicalUrl && {
       alternates: {
         canonical: canonicalUrl,
       },
     }),
     openGraph: {
-      title: ogTitle,
-      description: ogDescription,
-      url: pageUrl,
-      type: 'website',
-      siteName: site || 'SYNC',
-      locale: locale || 'en',
-      images: ogImageUrl
-        ? [
-            {
-              url: ogImageUrl,
-              width: 1200,
-              height: 630,
-              alt: ogTitle,
-            },
-          ]
-        : undefined,
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title: ogTitle,
-      description: ogDescription,
-      images: ogImageUrl ? [ogImageUrl] : undefined,
+      title: fields?.ogTitle?.value?.toString() || "Page",
+      description:
+        fields?.ogDescription?.value?.toString() ||
+        fields?.metadataDescription?.value?.toString() ||
+        "Sitecore Next.js Basic Example",
+      url: canonicalUrl,
+      images: fields?.ogImage?.value?.src || fields?.thumbnailImage?.value?.src,
     },
   };
 };

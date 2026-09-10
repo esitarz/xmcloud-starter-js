@@ -4,17 +4,12 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const nextConfig: NextConfig = {
   // Allow specifying a distinct distDir when concurrently running app in a container
   distDir: process.env.NEXTJS_DIST_DIR || '.next',
-
-  productionBrowserSourceMaps: process.env.GENERATE_SOURCEMAP === 'true',
   
   // Enable React Strict Mode
   reactStrictMode: true,
 
   // Disable the X-Powered-By header. Follows security best practices.
   poweredByHeader: false,
-
-  // Enable compression
-  compress: true,
 
   // use this configuration to ensure that only images from the whitelisted domains
   // can be served from the Next.js Image Optimization API
@@ -32,16 +27,11 @@ const nextConfig: NextConfig = {
         port: '',
       },
     ],
-    // Optimize image sizes for responsive loading
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    // Enable modern image formats
-    formats: ['image/avif', 'image/webp'],
     // Disable image optimization in development to avoid upstream timeouts
     unoptimized: process.env.NODE_ENV === 'development',
   },
   
-  // Sitemap, robots, and AI JSON endpoints via rewrites; handlers live under app/api/
+  // use this configuration to serve the sitemap.xml and robots.txt files from the API route handlers
   rewrites: async () => {
     return [
       {
@@ -70,26 +60,6 @@ const nextConfig: NextConfig = {
       {
         source: '/llms.txt',
         destination: '/api/llms-txt',
-        locale: false,
-      },
-      {
-        source: '/ai/summary.json',
-        destination: '/api/ai/summary',
-        locale: false,
-      },
-      {
-        source: '/ai/faq.json',
-        destination: '/api/ai/faq',
-        locale: false,
-      },
-      {
-        source: '/ai/service.json',
-        destination: '/api/ai/service',
-        locale: false,
-      },
-      {
-        source: '/ai/markdown/:path*',
-        destination: '/api/ai/markdown/:path*',
         locale: false,
       },
       {

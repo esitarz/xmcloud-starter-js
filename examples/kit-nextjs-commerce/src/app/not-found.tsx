@@ -6,7 +6,6 @@ import scConfig from 'sitecore.config';
 import Layout from 'src/Layout';
 import Providers from 'src/Providers';
 
-
 // Metadata for 404 Not Found page
 export const metadata: Metadata = {
   title: 'Page Not Found',
@@ -44,4 +43,3 @@ export default async function NotFound() {
     </div>
   );
 }
-
