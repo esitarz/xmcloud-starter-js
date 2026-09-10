@@ -20,6 +20,17 @@ export const checkoutConfig = {
   get stripeWebhookSecret(): string {
     return readRequiredEnvironmentVariable('STRIPE_WEBHOOK_SECRET');
   },
+  get connectedAccountId(): string {
+    return readRequiredEnvironmentVariable('STRIPE_CONNECTED_ACCOUNT_ID');
+  },
+  get hasConnectConfig(): boolean {
+    return Boolean(
+      process.env.STRIPE_SECRET_KEY?.trim() && process.env.STRIPE_CONNECTED_ACCOUNT_ID?.trim()
+    );
+  },
+  get hasCheckoutService(): boolean {
+    return Boolean(process.env.CHECKOUT_SERVICE_URL?.trim());
+  },
   get appUrl(): string {
     const appUrl =
       process.env.NEXT_PUBLIC_SITE_URL ||

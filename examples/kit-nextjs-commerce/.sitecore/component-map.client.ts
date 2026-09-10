@@ -118,6 +118,7 @@ import * as Header from 'src/components/component-library/Header';
 import * as FeaturesSection from 'src/components/component-library/FeaturesSection';
 import * as FAQ from 'src/components/component-library/FAQ';
 import * as ContactSection from 'src/components/component-library/ContactSection';
+import * as CommerceCartCheckout from 'src/components/commerce/CommerceCartCheckout';
 import * as Carousel from 'src/components/carousel/Carousel';
 import * as CardSpotlightdev from 'src/components/card-spotlight/card-spotlight.dev';
 import * as ArticleHeader from 'src/components/article-header/ArticleHeader';
@@ -237,6 +238,7 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['FeaturesSection', { ...FeaturesSection }],
   ['FAQ', { ...FAQ }],
   ['ContactSection', { ...ContactSection }],
+  ['CommerceCartCheckout', { ...CommerceCartCheckout }],
   ['Carousel', { ...Carousel }],
   ['CardSpotlight', { ...CardSpotlightdev }],
   ['ArticleHeader', { ...ArticleHeader }],

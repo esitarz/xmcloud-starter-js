@@ -1,3 +1,11 @@
+export interface CommerceCartItem {
+  id: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
 export interface CommerceCart {
   id?: string;
   status: 'Unsubmitted';
@@ -6,6 +14,7 @@ export interface CommerceCart {
   taxCost?: number;
   total?: number;
   isCalculated: boolean;
+  items: CommerceCartItem[];
 }
 
 export interface AddCartItemInput {

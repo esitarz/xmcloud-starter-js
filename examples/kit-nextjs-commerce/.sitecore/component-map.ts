@@ -103,6 +103,7 @@ import * as ProductListingDefaultdev from 'src/components/product-listing/Produc
 import * as ProductListingCarddev from 'src/components/product-listing/ProductListingCard.dev';
 import * as ProductListingdictionary from 'src/components/product-listing/product-listing.dictionary';
 import * as ProductListing from 'src/components/product-listing/ProductListing';
+import * as ProductCard from 'src/components/product-card/ProductCard';
 import * as Portaldev from 'src/components/portal/portal.dev';
 import * as PageHeaderFiftyFiftydev from 'src/components/page-header/PageHeaderFiftyFifty.dev';
 import * as PageHeaderDefaultdev from 'src/components/page-header/PageHeaderDefault.dev';
@@ -210,6 +211,7 @@ import * as FAQ from 'src/components/component-library/FAQ';
 import * as ContactSection from 'src/components/component-library/ContactSection';
 import * as CLHero from 'src/components/component-library/CLHero';
 import * as CallToAction from 'src/components/component-library/CallToAction';
+import * as CommerceCartCheckout from 'src/components/commerce/CommerceCartCheckout';
 import * as Carousel from 'src/components/carousel/Carousel';
 import * as CardSpotlightdev from 'src/components/card-spotlight/card-spotlight.dev';
 import * as Carddev from 'src/components/card/Card.dev';
@@ -318,6 +320,7 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['ProductListingDefault', { ...ProductListingDefaultdev }],
   ['ProductListingCard', { ...ProductListingCarddev }],
   ['ProductListing', { ...ProductListingdictionary, ...ProductListing, componentType: 'client' }],
+  ['ProductCard', { ...ProductCard }],
   ['Portal', { ...Portaldev }],
   ['PageHeaderFiftyFifty', { ...PageHeaderFiftyFiftydev }],
   ['PageHeaderDefault', { ...PageHeaderDefaultdev }],
@@ -419,6 +422,7 @@ export const componentMap = new Map<string, NextjsContentSdkComponent>([
   ['ContactSection', { ...ContactSection, componentType: 'client' }],
   ['CLHero', { ...CLHero }],
   ['CallToAction', { ...CallToAction }],
+  ['CommerceCartCheckout', { ...CommerceCartCheckout, componentType: 'client' }],
   ['Carousel', { ...Carousel, componentType: 'client' }],
   ['CardSpotlight', { ...CardSpotlightdev }],
   ['Card', { ...Carddev }],

@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { useMatchMedia } from '@/hooks/use-match-media';
 import { AnimatedHoverNav } from '@/components/ui/animated-hover-nav';
 import { getFieldValue } from '@/lib/component-props';
+import { CommerceCartCheckout } from '@/components/commerce/CommerceCartCheckout';
 
 export const GlobalHeaderDefault: React.FC<GlobalHeaderProps> = (props) => {
   const { fields, isPageEditing } = props ?? {};
@@ -129,9 +130,9 @@ export const GlobalHeaderDefault: React.FC<GlobalHeaderProps> = (props) => {
               </div>
             </NavigationMenu>
           </nav>
-          {/* Desktop CTA */}
-          {headerContactField?.value && (
-            <div className="@lg:flex @lg:items-center @lg:justify-end hidden">
+          <div className="@lg:flex @lg:items-center @lg:justify-end @lg:gap-2 hidden">
+            <CommerceCartCheckout />
+            {headerContactField?.value && (
               <Button asChild className="font-heading text-base font-medium">
                 <CompatibleLink
                   field={headerContactField}
@@ -139,10 +140,11 @@ export const GlobalHeaderDefault: React.FC<GlobalHeaderProps> = (props) => {
                   prefetch={false}
                 />
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           {/* Mobile Navigation */}
-          <nav className="@lg:hidden flex flex-1 justify-end" aria-label="Mobile navigation">
+          <nav className="@lg:hidden flex flex-1 items-center justify-end gap-1" aria-label="Mobile navigation">
+            <CommerceCartCheckout />
             <Sheet open={isOpen} onOpenChange={setIsOpen}>
               <AnimatePresence>
                 {isOpen && (
@@ -189,7 +191,7 @@ export const GlobalHeaderDefault: React.FC<GlobalHeaderProps> = (props) => {
                           primaryNavigationLinks.targetItems.length > 0 &&
                           primaryNavigationLinks?.targetItems.map((item, index) => (
                             <motion.div
-                              key={`${getFieldValue(item.link as any)?.value?.text}-mobile`}
+                              key={`${getFieldValue(item.link as any)?.value?.href || getFieldValue(item.link as any)?.value?.text || 'nav-item'}-mobile-${index}`}
                               initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{

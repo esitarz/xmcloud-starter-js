@@ -91,7 +91,6 @@ export const config = {
    * 7. all root files inside /public
    */
   matcher: [
-    '/',
-    '/((?!api/|\\.well-known/|sitemap|robots|llms|_next/|healthz|sitecore/api/|-/|favicon.ico|sc_logo.svg|ai/).*)',
+    '/((?!$|api/|\\.well-known/|sitemap|robots|llms|_next/|healthz|sitecore/api/|-/|favicon.ico|sc_logo.svg|ai/|checkout(?:/|$)|test(?:/|$)|oc-test(?:/|$)).*)',
   ],
 };

@@ -23,15 +23,46 @@ type PageProps = {
   }>;
 };
 
+const resolvePageWithFallbackSites = async (
+  path: string[],
+  locale: string,
+  requestedSite: string
+) => {
+  const candidateSites =
+    process.env.NODE_ENV === 'development'
+      ? Array.from(
+          new Set([
+            requestedSite,
+            scConfig.defaultSite,
+            ...sites.map((candidate: SiteInfo) => candidate.name),
+          ])
+        ).filter((value): value is string => typeof value === 'string' && value.length > 0)
+      : [requestedSite];
+
+  for (const candidateSite of candidateSites) {
+    const candidatePage = await client.getPage(path, { site: candidateSite, locale });
+    if (candidatePage) {
+      return {
+        page: candidatePage,
+        resolvedSite: candidateSite,
+      };
+    }
+  }
+
+  return {
+    page: null,
+    resolvedSite: requestedSite,
+  };
+};
+
 export default async function Page({ params }: PageProps) {
   const { site, locale, path } = await params;
   const draft = await draftMode();
   const baseUrl = getBaseUrl();
-
-  // Set site and locale to be available in src/i18n/request.ts for fetching the dictionary
-  setRequestLocale(`${site}_${locale}`);
+  const routePath = path ?? [];
 
   // Fetch the page data from Sitecore
+  let resolvedSite = site;
   let page;
   if (draft.isEnabled) {
     const headers = await nextHeaders();
@@ -42,8 +73,13 @@ export default async function Page({ params }: PageProps) {
       page = await client.getPreview(previewData);
     }
   } else {
-    page = await client.getPage(path ?? [], { site, locale });
+    const resolved = await resolvePageWithFallbackSites(routePath, locale, site);
+    page = resolved.page;
+    resolvedSite = resolved.resolvedSite;
   }
+
+  // Set site and locale to be available in src/i18n/request.ts for fetching the dictionary
+  setRequestLocale(`${resolvedSite}_${locale}`);
 
   // If the page is not found, return a 404
   if (!page) {
