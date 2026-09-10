@@ -12,6 +12,35 @@ import scConfig from 'sitecore.config';
 import { routing } from './i18n/routing';
 import client from './lib/sitecore-client';
 
+const shouldSkipProxy = (req: NextRequest): boolean => {
+  const pathname = req.nextUrl.pathname;
+
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/sitecore/api/') ||
+    pathname.startsWith('/-/') ||
+    pathname.startsWith('/.well-known/') ||
+    pathname.startsWith('/ai/') ||
+    pathname.startsWith('/checkout') ||
+    pathname.startsWith('/test') ||
+    pathname.startsWith('/oc-test') ||
+    pathname === '/healthz' ||
+    pathname === '/sitemap.xml' ||
+    /^\/sitemap-\d+\.xml$/.test(pathname) ||
+    pathname === '/sitemap-llm.xml' ||
+    pathname === '/robots.txt' ||
+    pathname === '/llms.txt' ||
+    pathname === '/favicon.ico' ||
+    pathname === '/sc_logo.svg'
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const preview = new PreviewProxy({
     client,
     ...scConfig.api.edge,
@@ -30,7 +59,7 @@ const locale = new LocaleProxy({
   // Certain paths are ignored by default (e.g. files and Next.js API routes), but you may wish to disable more.
   // This is an important performance consideration since Next.js Edge middleware runs on every request.
   // in multilanguage scenarios, we need locale middleware to always run first to ensure locale is set and used correctly by the rest of the middlewares
-  skip: () => false,
+  skip: shouldSkipProxy,
 });
 
 const multisite = new AppRouterMultisiteProxy({
@@ -43,7 +72,7 @@ const multisite = new AppRouterMultisiteProxy({
   // This function determines if the middleware should be turned off on per-request basis.
   // Certain paths are ignored by default (e.g. files and Next.js API routes), but you may wish to disable more.
   // This is an important performance consideration since Next.js Edge middleware runs on every request.
-  skip: () => false,
+  skip: shouldSkipProxy,
 });
 
 const redirects = new RedirectsProxy({
@@ -58,7 +87,7 @@ const redirects = new RedirectsProxy({
   // Certain paths are ignored by default (e.g. Next.js API routes), but you may wish to disable more.
   // By default it is disabled while in development mode.
   // This is an important performance consideration since Next.js Edge middleware runs on every request.
-  skip: () => false,
+  skip: shouldSkipProxy,
 });
 
 const personalize = new PersonalizeProxy({
@@ -72,7 +101,7 @@ const personalize = new PersonalizeProxy({
   // Certain paths are ignored by default (e.g. Next.js API routes), but you may wish to disable more.
   // By default it is disabled while in development mode.
   // This is an important performance consideration since Next.js Edge middleware runs on every request.
-  skip: () => false,
+  skip: shouldSkipProxy,
 });
 
 export default function proxy(req: NextRequest) {
