@@ -17,8 +17,12 @@ import {
   toUniqueProductIds,
 } from "@/lib/commerce/products/service";
 import OrderCloudProductCard from "./OrderCloudProductCard";
+import AuthoringProductField, {
+  type AuthoringProductFieldConfig,
+} from "./AuthoringProductField";
 
 type FeaturedProductsRailProps = {
+  authoringField?: AuthoringProductFieldConfig;
   detailPageHref: string;
   header?: ReactNode;
   isAuthoring: boolean;
@@ -47,13 +51,24 @@ const ProductSkeleton = () => (
 );
 
 export default function FeaturedProductsRail({
+  authoringField,
   detailPageHref,
   header,
   isAuthoring,
   maxProductsPerRow,
   productIds,
 }: FeaturedProductsRailProps) {
-  const uniqueIds = useMemo(() => toUniqueProductIds(productIds), [productIds]);
+  const [effectiveProductIds, setEffectiveProductIds] = useState(productIds);
+  const [seenProductIds, setSeenProductIds] = useState(productIds);
+  if (seenProductIds !== productIds) {
+    setSeenProductIds(productIds);
+    setEffectiveProductIds(productIds);
+  }
+
+  const uniqueIds = useMemo(
+    () => toUniqueProductIds(effectiveProductIds),
+    [effectiveProductIds],
+  );
   const list = useProducts(
     { pageSize: uniqueIds.length, filters: { ID: uniqueIds } },
     { select: toCommerceProduct, enabled: uniqueIds.length > 0 },
@@ -70,6 +85,15 @@ export default function FeaturedProductsRail({
     useState<ScrollState>(EMPTY_SCROLL_STATE);
   const railRef = useRef<HTMLDivElement>(null);
 
+  const authoringEditor =
+    isAuthoring && authoringField ? (
+      <AuthoringProductField
+        {...authoringField}
+        initialIds={effectiveProductIds}
+        onSaved={setEffectiveProductIds}
+      />
+    ) : null;
+
   const updateScrollState = useCallback(() => {
     const rail = railRef.current;
     if (!rail) {
@@ -82,8 +106,7 @@ export default function FeaturedProductsRail({
     setScrollState({
       hasOverflow,
       canScrollBackward: hasOverflow && rail.scrollLeft > 1,
-      canScrollForward:
-        hasOverflow && rail.scrollLeft < maximumScrollLeft - 1,
+      canScrollForward: hasOverflow && rail.scrollLeft < maximumScrollLeft - 1,
     });
   }, []);
 
@@ -114,12 +137,13 @@ export default function FeaturedProductsRail({
     });
   };
 
-  if (productIds.length === 0) {
+  if (effectiveProductIds.length === 0) {
     return isAuthoring ? (
       <>
         {header}
+        {authoringEditor}
         <p className="rounded border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-          Choose products in the component properties.
+          Choose products above to populate this component.
         </p>
       </>
     ) : null;
@@ -129,6 +153,7 @@ export default function FeaturedProductsRail({
     return (
       <>
         {header}
+        {authoringEditor}
         <p
           role="alert"
           className="rounded border border-slate-200 bg-slate-50 p-4 text-sm"
@@ -143,6 +168,7 @@ export default function FeaturedProductsRail({
     return isAuthoring ? (
       <>
         {header}
+        {authoringEditor}
         <p className="rounded border border-dashed border-slate-300 p-4 text-sm text-slate-600">
           The selected products are not visible to the current shopper.
         </p>
@@ -152,7 +178,7 @@ export default function FeaturedProductsRail({
 
   const visibleItemCount = Math.min(
     maxProductsPerRow,
-    loading ? productIds.length : products.length,
+    loading ? effectiveProductIds.length : products.length,
   );
   const cardBasis = `calc((100% - ${(maxProductsPerRow - 1) * 16}px) / ${maxProductsPerRow})`;
   const railStyle = {
@@ -162,6 +188,7 @@ export default function FeaturedProductsRail({
   return (
     <>
       {header}
+      {authoringEditor}
       <div className="space-y-3">
         {scrollState.hasOverflow && (
           <div className="flex justify-end gap-2">
@@ -197,7 +224,7 @@ export default function FeaturedProductsRail({
                 <div
                   key={`featured-product-skeleton-${index}`}
                   className={`${
-                    productIds.length === 1
+                    effectiveProductIds.length === 1
                       ? "w-full"
                       : "w-[82%] sm:w-[calc((100%_-_1rem)/2)] lg:w-[var(--featured-product-basis)]"
                   } shrink-0 snap-start`}

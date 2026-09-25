@@ -24,7 +24,8 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
   const productOptions = useProductOptions({ optional: true });
   const selection = useProductSelection({ optional: true });
   const { cart, resetSession } = useOrderCloud();
-  const isAuthoring = page.mode.isEditing || page.mode.isDesignLibrary;
+  const isAuthoring =
+    page.mode.isEditing || page.mode.isPreview || page.mode.isDesignLibrary;
   const cartHref = getCartDestinationFromRoute(
     page.layout?.sitecore?.route,
   ).href;
@@ -56,7 +57,8 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     if (
       !selection ||
       !productId ||
-      productOptions?.status !== "success"
+      productOptions?.status !== "success" ||
+      isAuthoring
     ) {
       return;
     }
@@ -157,7 +159,7 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
             min={1}
             step={1}
             value={quantity}
-            disabled={submissionStatus === "adding"}
+            disabled={isAuthoring || submissionStatus === "adding"}
             aria-describedby={
               quantityError ? "product-quantity-error" : undefined
             }
@@ -173,7 +175,9 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
         <button
           type="submit"
           disabled={
-            !selection.isComplete || submissionStatus === "adding"
+            !selection.isComplete ||
+            isAuthoring ||
+            submissionStatus === "adding"
           }
           className="min-h-12 flex-1 rounded-md bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >

@@ -90,27 +90,30 @@ describe("CartService", () => {
     });
   });
 
-  it("deletes a leftover cart and retries add after a 409", async () => {
-    let attempts = 0;
-    const { request, mock } = createRequest((path, init) => {
-      if (path === "/v1/cart/lineitems" && attempts++ === 0) {
-        throw Object.assign(new Error("Object already exists"), {
-          status: 409,
-        });
-      }
-      return init?.method === "DELETE" ? "" : {};
+  it("surfaces a 409 without deleting the cart or retrying", async () => {
+    const conflict = Object.assign(new Error("Object already exists"), {
+      status: 409,
+    });
+    const { request, mock } = createRequest(() => {
+      throw conflict;
     });
 
-    await new CartService(request).addItem({
-      ProductID: "SKU-123",
-      Quantity: 1,
-      Specs: [],
-    });
+    await expect(
+      new CartService(request).addItem({
+        ProductID: "SKU-123",
+        Quantity: 1,
+        Specs: [],
+      }),
+    ).rejects.toBe(conflict);
 
-    expect(mock).toHaveBeenCalledWith("/v1/cart", { method: "DELETE" });
     expect(
       mock.mock.calls.filter(([path]) => path === "/v1/cart/lineitems"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(
+      mock.mock.calls.some(
+        ([path, init]) => path === "/v1/cart" && init?.method === "DELETE",
+      ),
+    ).toBe(false);
   });
 
   it("does not retry other add failures", async () => {

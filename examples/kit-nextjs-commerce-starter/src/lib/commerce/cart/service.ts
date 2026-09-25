@@ -1,5 +1,4 @@
 import type { LineItem } from "ordercloud-javascript-sdk";
-import { hasCommerceStatus } from "../errors";
 import { toCommerceCart, type OrderCloudCart } from "./mapper";
 import type {
   AddCartItemInput,
@@ -48,20 +47,10 @@ export class CartService {
       Quantity: input.Quantity,
       ...(input.Specs.length ? { Specs: input.Specs } : {}),
     } satisfies LineItem;
-    const create = () =>
-      this.request("/v1/cart/lineitems", { method: "POST", ...json(lineItem) });
-
-    try {
-      await create();
-    } catch (error) {
-      if (!hasCommerceStatus(error, 409)) throw error;
-      try {
-        await this.request("/v1/cart", { method: "DELETE" });
-      } catch {
-        // No cart to delete, or it was already submitted.
-      }
-      await create();
-    }
+    await this.request("/v1/cart/lineitems", {
+      method: "POST",
+      ...json(lineItem),
+    });
   }
 
   async updateItem(input: UpdateCartItemInput): Promise<void> {
