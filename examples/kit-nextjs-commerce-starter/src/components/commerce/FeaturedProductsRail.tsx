@@ -3,14 +3,19 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useOrderCloud } from "@/contexts/OrderCloudContext";
+import { useProducts } from "@sitecore-content-sdk/nextjs/commerce";
 import { buildProductDetailHref } from "@/lib/commerce/products/href";
-import type { CommerceProduct } from "@/lib/commerce/products/types";
+import { toCommerceProduct } from "@/lib/commerce/products/mapper";
+import {
+  orderProductsByIds,
+  toUniqueProductIds,
+} from "@/lib/commerce/products/service";
 import OrderCloudProductCard from "./OrderCloudProductCard";
 
 type FeaturedProductsRailProps = {
@@ -48,50 +53,22 @@ export default function FeaturedProductsRail({
   maxProductsPerRow,
   productIds,
 }: FeaturedProductsRailProps) {
-  const { products: productsService, status } = useOrderCloud();
-  const [products, setProducts] = useState<CommerceProduct[]>([]);
-  const [loading, setLoading] = useState(productIds.length > 0);
-  const [error, setError] = useState(false);
+  const uniqueIds = useMemo(() => toUniqueProductIds(productIds), [productIds]);
+  const list = useProducts(
+    { pageSize: uniqueIds.length, filters: { ID: uniqueIds } },
+    { select: toCommerceProduct, enabled: uniqueIds.length > 0 },
+  );
+  const products = useMemo(
+    () => orderProductsByIds(list.items, uniqueIds),
+    [list.items, uniqueIds],
+  );
+  // While other IDs load, keep showing already-loaded products that are still selected.
+  const loading =
+    list.isLoading || (list.isRefetching && products.length === 0);
+  const error = list.isError;
   const [scrollState, setScrollState] =
     useState<ScrollState>(EMPTY_SCROLL_STATE);
   const railRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (productIds.length === 0) {
-      setProducts([]);
-      setLoading(false);
-      setError(false);
-      return;
-    }
-
-    if (status !== "authenticated") {
-      setProducts([]);
-      setLoading(status === "loading");
-      setError(status === "error");
-      return;
-    }
-
-    const controller = new AbortController();
-    setLoading(true);
-    setError(false);
-
-    void productsService
-      .listByIds(productIds, { signal: controller.signal })
-      .then((response) => {
-        if (!controller.signal.aborted) setProducts(response.items);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setProducts([]);
-          setError(true);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [productIds, productsService, status]);
 
   const updateScrollState = useCallback(() => {
     const rail = railRef.current;

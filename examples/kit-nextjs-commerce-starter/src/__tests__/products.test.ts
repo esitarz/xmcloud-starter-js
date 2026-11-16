@@ -1,19 +1,57 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ProductsApi } from "@sitecore-content-sdk/nextjs/commerce";
 import { toCommerceProduct } from "../lib/commerce/products/mapper";
-import { ProductsService } from "../lib/commerce/products/service";
+import {
+  listProductPage,
+  orderProductsByIds,
+  toProductListMeta,
+  toProductListParams,
+  toUniqueProductIds,
+} from "../lib/commerce/products/service";
 
 const createApi = (response: unknown) => {
   const list = vi.fn().mockResolvedValue(response);
   return { list: list as unknown as ProductsApi["list"], mock: list };
 };
 
-describe("ProductsService", () => {
-  it("searches the buyer catalog through the SDK and maps metadata", async () => {
-    const controller = new AbortController();
-    const api = createApi({
-      Items: [{ ID: "P-1", Name: "Headphones" }],
-      Meta: {
+describe("toProductListParams", () => {
+  it("maps starter options to SDK list params", () => {
+    expect(
+      toProductListParams({
+        catalogId: " catalog/one ",
+        categoryId: " running/shoes ",
+        search: " head phones ",
+        sortBy: ["!xp.Price"],
+        page: 2,
+        pageSize: 10,
+        filters: { "xp.Facets.Brand": ["Nike"] },
+      }),
+    ).toEqual({
+      catalogID: "catalog/one",
+      categoryID: "running/shoes",
+      search: "head phones",
+      sortBy: ["!xp.Price"],
+      page: 2,
+      pageSize: 10,
+      filters: { "xp.Facets.Brand": ["Nike"] },
+    });
+  });
+
+  it("drops blank catalog, category and search", () => {
+    expect(
+      toProductListParams({ catalogId: " ", categoryId: "", search: "  " }),
+    ).toMatchObject({
+      catalogID: undefined,
+      categoryID: undefined,
+      search: undefined,
+    });
+  });
+});
+
+describe("toProductListMeta", () => {
+  it("maps paging and facets", () => {
+    expect(
+      toProductListMeta({
         Page: 2,
         PageSize: 10,
         TotalCount: 12,
@@ -27,98 +65,74 @@ describe("ProductsService", () => {
               { Value: "Jordan", Count: 4 },
             ],
           },
+          { Name: " ", XpPath: "Facets.Empty", Values: [] },
         ],
-      },
+      }),
+    ).toEqual({
+      page: 2,
+      pageSize: 10,
+      totalCount: 12,
+      totalPages: 2,
+      facets: [
+        {
+          name: "Brand",
+          xpPath: "Facets.Brand",
+          values: [
+            { value: "Nike", count: 8 },
+            { value: "Jordan", count: 4 },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("returns undefined without metadata", () => {
+    expect(toProductListMeta(null)).toBeUndefined();
+  });
+});
+
+describe("listProductPage", () => {
+  it("loads one page through the SDK and maps it", async () => {
+    const controller = new AbortController();
+    const api = createApi({
+      Items: [{ ID: "P-1", Name: "Headphones" }],
+      Meta: { Page: 1, PageSize: 10, TotalCount: 1, TotalPages: 1 },
     });
 
     await expect(
-      new ProductsService(api).list({
-        catalogId: " catalog/one ",
-        categoryId: " running/shoes ",
-        search: "head phones",
-        sortBy: ["!xp.Price"],
-        page: 2,
-        pageSize: 10,
-        filters: { "xp.Facets.Brand": ["Nike"] },
-        signal: controller.signal,
-      }),
+      listProductPage(
+        api,
+        { search: "head", page: 1, pageSize: 10 },
+        { signal: controller.signal },
+      ),
     ).resolves.toEqual({
       items: [{ id: "P-1", name: "Headphones", images: [] }],
-      meta: {
-        page: 2,
-        pageSize: 10,
-        totalCount: 12,
-        totalPages: 2,
-        facets: [
-          {
-            name: "Brand",
-            xpPath: "Facets.Brand",
-            values: [
-              { value: "Nike", count: 8 },
-              { value: "Jordan", count: 4 },
-            ],
-          },
-        ],
-      },
+      meta: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1, facets: [] },
     });
     expect(api.mock).toHaveBeenCalledWith(
-      {
-        catalogID: "catalog/one",
-        categoryID: "running/shoes",
-        search: "head phones",
-        sortBy: ["!xp.Price"],
-        page: 2,
-        pageSize: 10,
-        filters: { "xp.Facets.Brand": ["Nike"] },
-      },
+      { search: "head", page: 1, pageSize: 10 },
       { signal: controller.signal },
     );
   });
+});
 
-  it("skips list entries without a product ID", async () => {
-    const api = createApi({
-      Items: [{ ID: " ", Name: "Broken" }, { Name: "No ID" }, { ID: "P-3" }],
-      Meta: { TotalCount: 3 },
-    });
-
-    await expect(new ProductsService(api).list()).resolves.toMatchObject({
-      items: [{ id: "P-3", name: "P-3", images: [] }],
-    });
+describe("featured product IDs", () => {
+  it("trims and de-duplicates IDs in order", () => {
+    expect(toUniqueProductIds([" P-2 ", "P-1", "P-2", "MISSING", ""])).toEqual([
+      "P-2",
+      "P-1",
+      "MISSING",
+    ]);
   });
 
-  it("loads selected products by ID in order and skips missing ones", async () => {
-    const api = createApi({
-      Items: [
-        { ID: "P-1", Name: "P-1" },
-        { ID: "P-2", Name: "P-2" },
-      ],
-      Meta: { TotalCount: 2 },
-    });
+  it("orders products by the requested IDs and skips missing ones", () => {
+    const p1 = toCommerceProduct({ ID: "P-1", Name: "P-1" });
+    const p2 = toCommerceProduct({ ID: "P-2", Name: "P-2" });
+    const p3 = toCommerceProduct({ ID: "P-3", Name: "P-3" });
 
-    await expect(
-      new ProductsService(api).listByIds([" P-2 ", "P-1", "P-2", "MISSING", ""]),
-    ).resolves.toEqual({
-      items: [
-        { id: "P-2", name: "P-2", images: [] },
-        { id: "P-1", name: "P-1", images: [] },
-      ],
-      meta: { totalCount: 2 },
-    });
-    expect(api.mock).toHaveBeenCalledOnce();
-    expect(api.mock).toHaveBeenCalledWith(
-      { pageSize: 3, filters: { ID: ["P-2", "P-1", "MISSING"] } },
-      { signal: undefined },
-    );
-  });
-
-  it("returns an empty list without requesting products", async () => {
-    const api = createApi({ Items: [], Meta: {} });
-
-    await expect(new ProductsService(api).listByIds([" ", ""])).resolves.toEqual({
-      items: [],
-      meta: { totalCount: 0 },
-    });
-    expect(api.mock).not.toHaveBeenCalled();
+    expect(
+      orderProductsByIds([p1, p2, p3], ["P-2", "P-1", "MISSING"]),
+    ).toEqual([p2, p1]);
   });
 });
 

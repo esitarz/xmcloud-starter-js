@@ -40,15 +40,16 @@ const clearLegacyTokenCookies = (): void => {
 };
 
 /**
- * Starter commerce services on top of the SDK `CommerceProvider` session, so products, cart and
- * checkout all run as the same shopper. Must be rendered inside `CommerceProvider`.
+ * Starter cart and session helpers on top of the SDK `CommerceProvider` session, so products, cart
+ * and checkout all run as the same shopper. Products load through the SDK hooks
+ * (`ProductProvider`, `useProducts`). Must be rendered inside `CommerceProvider`.
  */
 export function OrderCloudProvider({ children }: { children: React.ReactNode }) {
   const { service, status: sdkStatus, error, ensureSession, resetSession } = useCommerce();
 
   useEffect(clearLegacyTokenCookies, []);
 
-  // Cart and listing components wait for a session, so start one on mount like the starter always has.
+  // Cart components (and infinite-scroll product lists) wait for a session, so start one on mount.
   useEffect(() => {
     if (sdkStatus === 'idle') ensureSession().catch(() => undefined);
   }, [sdkStatus, ensureSession]);

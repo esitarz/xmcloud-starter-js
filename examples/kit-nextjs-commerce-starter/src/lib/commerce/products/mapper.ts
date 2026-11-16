@@ -41,9 +41,3 @@ export const toCommerceProduct = (
     currency: price.currency,
   };
 };
-
-/** True for list entries that carry a usable product ID. */
-export const hasProductId = (
-  value: unknown,
-): value is OrderCloudBuyerProduct =>
-  !!asNonEmptyString(asRecord(value)?.ID, { trim: true });

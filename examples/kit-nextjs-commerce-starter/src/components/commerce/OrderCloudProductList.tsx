@@ -1,8 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { useCommerce, useProducts } from "@sitecore-content-sdk/nextjs/commerce";
 import { useOrderCloud } from "@/contexts/OrderCloudContext";
 import { buildProductDetailHref } from "@/lib/commerce/products/href";
+import { toCommerceProduct } from "@/lib/commerce/products/mapper";
+import {
+  listProductPage,
+  toProductListMeta,
+  toProductListParams,
+} from "@/lib/commerce/products/service";
 import {
   getPageNumbers,
   mergeProductListFilters,
@@ -134,7 +147,6 @@ const writeUrlState = (
   {
     initialSearchTerm,
     initialSortValue,
-    replace = false,
     showFacets,
     showSearchBar,
     showSort,
@@ -142,13 +154,12 @@ const writeUrlState = (
   }: {
     initialSearchTerm?: string;
     initialSortValue: string;
-    replace?: boolean;
     showFacets: boolean;
     showSearchBar: boolean;
     showSort: boolean;
     defaultFacetPaths: string[];
   },
-) => {
+): string => {
   const url = new URL(window.location.href);
   url.searchParams.delete(SEARCH_PARAM);
   url.searchParams.delete(SORT_PARAM);
@@ -179,8 +190,16 @@ const writeUrlState = (
     }
   }
 
-  window.history[replace ? "replaceState" : "pushState"]({}, "", url);
+  window.history.pushState({}, "", url);
+  return url.search;
 };
+
+const subscribeToHistory = (onChange: () => void) => {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+};
+const getLocationSearch = () => window.location.search;
+const getServerLocationSearch = () => null;
 
 const getProductGridStyle = (maxProductsPerRow: number) => ({
   gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 14rem), 1fr))",
@@ -288,32 +307,41 @@ export default function OrderCloudProductList({
   renderingIdentifier,
   styles,
 }: OrderCloudProductListProps) {
-  const { products: productsService, status } = useOrderCloud();
+  const { status } = useOrderCloud();
+  const { service } = useCommerce();
+  const isInfinite = paginationStyle === "infinite";
   const resolvedDetailPageHref = detailPageHref?.trim() || undefined;
   const idPrefix = renderingIdentifier ?? "product-list";
   const initialSortValue = sortOptions[0]?.value ?? "";
-  const [urlReady, setUrlReady] = useState(isAuthoring);
+  const locationSearch = useSyncExternalStore(
+    subscribeToHistory,
+    getLocationSearch,
+    getServerLocationSearch,
+  );
+  // URL (search string) the list state was last read from or written to.
+  const [appliedLocation, setAppliedLocation] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(initialSearchTerm ?? "");
   const [search, setSearch] = useState(initialSearchTerm ?? "");
   const [sort, setSort] = useState(initialSortValue);
-  const [selectedFacets, setSelectedFacets] = useState<
+  const [facetSelection, setFacetSelection] = useState<
     Record<string, string[]>
   >({});
   const [explicitFacetPaths, setExplicitFacetPaths] = useState<string[]>([]);
-  const [facetDefinitions, setFacetDefinitions] = useState<
+  const [listFacetDefinitions, setListFacetDefinitions] = useState<
     CommerceProductFacet[]
   >([]);
-  const [facetDiscoveryReady, setFacetDiscoveryReady] = useState(
-    !showFacets || !productFilters,
-  );
   const [page, setPage] = useState(1);
-  const [products, setProducts] = useState<CommerceProduct[]>([]);
-  const [meta, setMeta] = useState<CommerceProductList["meta"]>();
+  // Infinite scroll appends pages, which `useProducts` does not support, so it loads by hand.
+  const [appendedProducts, setAppendedProducts] = useState<CommerceProduct[]>(
+    [],
+  );
+  const [appendedMeta, setAppendedMeta] =
+    useState<CommerceProductList["meta"]>();
+  const [appendLoading, setAppendLoading] = useState(true);
+  const [appendError, setAppendError] = useState(false);
   const [availableFacets, setAvailableFacets] = useState<
     CommerceProductFacet[]
   >([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMorePendingRef = useRef(false);
@@ -322,97 +350,64 @@ export default function OrderCloudProductList({
   const productFiltersKey = JSON.stringify(productFilters ?? {});
   const hasConfigurationError = productFilterErrors.length > 0;
 
-  useEffect(() => {
-    if (isAuthoring) setSort(initialSortValue);
-  }, [initialSortValue, isAuthoring]);
+  const clearAppendedPages = () => {
+    setAppendedProducts([]);
+    setAppendLoading(true);
+  };
+
+  const [authoredSortValue, setAuthoredSortValue] = useState(initialSortValue);
+  if (isAuthoring && authoredSortValue !== initialSortValue) {
+    setAuthoredSortValue(initialSortValue);
+    setSort(initialSortValue);
+  }
+
+  // Read list state from the URL on the first client render and on back/forward navigation.
+  if (
+    !isAuthoring &&
+    locationSearch !== null &&
+    locationSearch !== appliedLocation
+  ) {
+    const state = readUrlState({
+      initialSearchTerm,
+      sortOptions,
+      showFacets,
+      showSearchBar,
+      showSort,
+    });
+    setAppliedLocation(locationSearch);
+    setSearchInput(state.search);
+    setSearch(state.search);
+    setSort(state.sort);
+    setFacetSelection(showFacets ? state.selectedFacets : {});
+    setExplicitFacetPaths(showFacets ? state.explicitFacetPaths : []);
+    setPage(paginationStyle === "standard" ? state.page : 1);
+    clearAppendedPages();
+  }
+  const urlReady = isAuthoring || appliedLocation !== null;
+
+  // Facet definitions for the unfiltered catalog/category, so authored filters on facet paths become
+  // editable facet defaults instead of hidden filters.
+  const discoveryEnabled =
+    showFacets && !!productFilters && !hasConfigurationError;
+  const discovery = useProducts(
+    toProductListParams({ catalogId, categoryId, page: 1, pageSize: 1 }),
+    { enabled: discoveryEnabled },
+  );
+  const facetDiscoveryReady =
+    !discoveryEnabled || discovery.isSuccess || discovery.isError;
+  const discoveryFacets = useMemo(
+    () => toProductListMeta(discovery.meta)?.facets ?? [],
+    [discovery.meta],
+  );
+  const facetDefinitions = discoveryFacets.length
+    ? discoveryFacets
+    : listFacetDefinitions;
 
   useEffect(() => {
-    if (isAuthoring) return;
-
-    const applyUrlState = () => {
-      const state = readUrlState({
-        initialSearchTerm,
-        sortOptions,
-        showFacets,
-        showSearchBar,
-        showSort,
-      });
-      setSearchInput(state.search);
-      setSearch(state.search);
-      setSort(state.sort);
-      setSelectedFacets(showFacets ? state.selectedFacets : {});
-      setExplicitFacetPaths(showFacets ? state.explicitFacetPaths : []);
-      setPage(paginationStyle === "standard" ? state.page : 1);
-      setProducts([]);
-      setLoading(true);
-      setUrlReady(true);
-    };
-
-    applyUrlState();
-    window.addEventListener("popstate", applyUrlState);
-    return () => window.removeEventListener("popstate", applyUrlState);
-  }, [
-    initialSearchTerm,
-    initialSortValue,
-    isAuthoring,
-    paginationStyle,
-    showFacets,
-    showSearchBar,
-    showSort,
-    sortOptions,
-  ]);
-
-  useEffect(() => {
-    if (!showFacets || !productFilters) {
-      setFacetDefinitions([]);
-      setFacetDiscoveryReady(true);
-      return;
+    if (discovery.error) {
+      console.error("Product facet discovery failed", discovery.error);
     }
-    if (status !== "authenticated" || hasConfigurationError) {
-      setFacetDiscoveryReady(status !== "loading");
-      return;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    setFacetDiscoveryReady(false);
-
-    void productsService
-      .list({
-        signal: controller.signal,
-        catalogId,
-        categoryId,
-        page: 1,
-        pageSize: 1,
-      })
-      .then((payload) => {
-        if (!active) return;
-        setFacetDefinitions(payload.meta?.facets ?? []);
-      })
-      .catch((discoveryError) => {
-        if (!active || controller.signal.aborted) return;
-        console.error("Product facet discovery failed", discoveryError);
-        setFacetDefinitions([]);
-      })
-      .finally(() => {
-        if (active) setFacetDiscoveryReady(true);
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [
-    catalogId,
-    categoryId,
-    hasConfigurationError,
-    productFilterErrors.length,
-    productFilters,
-    productFiltersKey,
-    productsService,
-    showFacets,
-    status,
-  ]);
+  }, [discovery.error]);
 
   const { hiddenFilters, editableFacetDefaults } = useMemo(
     () => splitProductFilters(productFilters, facetDefinitions),
@@ -424,61 +419,17 @@ export default function OrderCloudProductList({
     [editableFacetDefaultsKey],
   );
 
-  useEffect(() => {
-    if (!facetDiscoveryReady || defaultFacetPaths.length === 0) return;
-
-    setSelectedFacets((current) => {
-      const next = { ...current };
-      let changed = false;
-      for (const [xpPath, values] of Object.entries(editableFacetDefaults)) {
-        if (!explicitFacetPaths.includes(xpPath) && next[xpPath] === undefined) {
-          next[xpPath] = values;
-          changed = true;
-        }
+  // Authored facet defaults apply to facet paths the shopper (or URL) has not set explicitly.
+  const selectedFacets = useMemo(() => {
+    if (!facetDiscoveryReady) return facetSelection;
+    let next = facetSelection;
+    for (const [xpPath, values] of Object.entries(editableFacetDefaults)) {
+      if (!explicitFacetPaths.includes(xpPath) && next[xpPath] === undefined) {
+        next = { ...next, [xpPath]: values };
       }
-
-      if (!changed) return current;
-
-      if (!isAuthoring && urlReady) {
-        writeUrlState(
-          {
-            search,
-            sort,
-            page,
-            selectedFacets: next,
-            explicitFacetPaths,
-          },
-          paginationStyle,
-          {
-            defaultFacetPaths,
-            initialSearchTerm,
-            initialSortValue,
-            replace: true,
-            showFacets,
-            showSearchBar,
-            showSort,
-          },
-        );
-      }
-      return next;
-    });
-  }, [
-    editableFacetDefaults,
-    editableFacetDefaultsKey,
-    explicitFacetPaths,
-    facetDiscoveryReady,
-    initialSearchTerm,
-    initialSortValue,
-    isAuthoring,
-    page,
-    paginationStyle,
-    search,
-    showFacets,
-    showSearchBar,
-    showSort,
-    sort,
-    urlReady,
-  ]);
+    }
+    return next;
+  }, [editableFacetDefaults, explicitFacetPaths, facetDiscoveryReady, facetSelection]);
 
   useEffect(() => {
     if (!mobileFiltersOpen) return;
@@ -500,27 +451,28 @@ export default function OrderCloudProductList({
       const nextSearch = searchInput.trim();
       if (nextSearch === search) return;
       setPage(1);
-      setProducts([]);
-      setLoading(true);
+      clearAppendedPages();
       setSearch(nextSearch);
       if (!isAuthoring && urlReady) {
-        writeUrlState(
-          {
-            search: nextSearch,
-            sort,
-            page: 1,
-            selectedFacets,
-            explicitFacetPaths,
-          },
-          paginationStyle,
-          {
-            defaultFacetPaths,
-            initialSearchTerm,
-            initialSortValue,
-            showFacets,
-            showSearchBar,
-            showSort,
-          },
+        setAppliedLocation(
+          writeUrlState(
+            {
+              search: nextSearch,
+              sort,
+              page: 1,
+              selectedFacets,
+              explicitFacetPaths,
+            },
+            paginationStyle,
+            {
+              defaultFacetPaths,
+              initialSearchTerm,
+              initialSortValue,
+              showFacets,
+              showSearchBar,
+              showSort,
+            },
+          ),
         );
       }
     }, SEARCH_DEBOUNCE_MS);
@@ -548,30 +500,58 @@ export default function OrderCloudProductList({
       : undefined;
     return mergeProductListFilters(hiddenFilters, selectedFacetFilters);
   }, [hiddenFilters, selectedFacets, showFacets]);
-  const filterKey = JSON.stringify(filters ?? {});
   const sortBy = useMemo(
     () => sortOptions.find((option) => option.value === sort)?.sortBy,
     [sort, sortOptions],
   );
 
-  useEffect(() => {
-    if (!urlReady || !facetDiscoveryReady) return;
-    if (hasConfigurationError) {
-      loadMorePendingRef.current = false;
-      setProducts([]);
-      setMeta(undefined);
-      setAvailableFacets([]);
-      setError(true);
-      setLoading(false);
-      return;
+  const listReady = urlReady && facetDiscoveryReady && !hasConfigurationError;
+  const resultSetParams = toProductListParams({
+    catalogId,
+    categoryId,
+    search,
+    sortBy,
+    filters,
+    pageSize,
+  });
+  // Everything but the page: a change here starts a new result set.
+  const resultSetKey = JSON.stringify(resultSetParams);
+
+  const recordFacets = (facets: CommerceProductFacet[]) => {
+    setAvailableFacets((current) => mergeProductFacets(current, facets));
+    setListFacetDefinitions((current) =>
+      current.length ? current : mergeProductFacets(current, facets),
+    );
+  };
+
+  const pageList = useProducts(
+    { ...resultSetParams, page: paginationStyle === "none" ? 1 : page },
+    { select: toCommerceProduct, enabled: listReady && !isInfinite },
+  );
+  const pageMeta = useMemo(
+    () => toProductListMeta(pageList.meta),
+    [pageList.meta],
+  );
+
+  // A new result set replaces the grid with skeletons; a page change keeps the current page visible.
+  const [pageItems, setPageItems] = useState(pageList.items);
+  const [pageItemsKey, setPageItemsKey] = useState<string | null>(null);
+  if (pageItems !== pageList.items) {
+    setPageItems(pageList.items);
+    if (pageList.isSuccess && !pageList.isRefetching) {
+      setPageItemsKey(resultSetKey);
+      recordFacets(pageMeta?.facets ?? []);
     }
-    if (status !== "authenticated") {
-      loadMorePendingRef.current = false;
-      setProducts([]);
-      setMeta(undefined);
-      setAvailableFacets([]);
-      setError(status === "error");
-      setLoading(status === "loading");
+  }
+
+  useEffect(() => {
+    if (pageList.error) {
+      console.error("Product list request failed", pageList.error);
+    }
+  }, [pageList.error]);
+
+  useEffect(() => {
+    if (!isInfinite || !listReady || status !== "authenticated" || !service) {
       return;
     }
 
@@ -584,30 +564,23 @@ export default function OrderCloudProductList({
     }, REQUEST_TIMEOUT_MS);
 
     const loadProducts = async () => {
-      setLoading(true);
-      setError(false);
+      setAppendLoading(true);
+      setAppendError(false);
       try {
-        const payload = await productsService.list({
-          signal: controller.signal,
-          catalogId,
-          categoryId,
-          search,
-          sortBy,
-          filters,
-          page: paginationStyle === "none" ? 1 : page,
-          pageSize,
-        });
-        if (!active) return;
-        setProducts((current) =>
-          paginationStyle === "infinite" && page > 1
-            ? mergeUniqueProducts(current, payload.items)
-            : payload.items,
+        const payload = await listProductPage(
+          service.products,
+          { ...JSON.parse(resultSetKey), page },
+          { signal: controller.signal },
         );
-        setMeta(payload.meta);
+        if (!active) return;
+        setAppendedProducts((current) =>
+          page > 1 ? mergeUniqueProducts(current, payload.items) : payload.items,
+        );
+        setAppendedMeta(payload.meta);
         setAvailableFacets((current) =>
           mergeProductFacets(current, payload.meta?.facets ?? []),
         );
-        setFacetDefinitions((current) =>
+        setListFacetDefinitions((current) =>
           current.length
             ? current
             : mergeProductFacets(current, payload.meta?.facets ?? []),
@@ -615,14 +588,14 @@ export default function OrderCloudProductList({
       } catch (loadError) {
         if (!active || (controller.signal.aborted && !timedOut)) return;
         console.error("Product list request failed", loadError);
-        setProducts([]);
-        setMeta(undefined);
-        setError(true);
+        setAppendedProducts([]);
+        setAppendedMeta(undefined);
+        setAppendError(true);
       } finally {
         window.clearTimeout(timeoutId);
         if (active) {
           loadMorePendingRef.current = false;
-          setLoading(false);
+          setAppendLoading(false);
         }
       }
     };
@@ -633,22 +606,27 @@ export default function OrderCloudProductList({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [
-    catalogId,
-    categoryId,
-    facetDiscoveryReady,
-    filterKey,
-    filters,
-    hasConfigurationError,
-    page,
-    pageSize,
-    paginationStyle,
-    productsService,
-    search,
-    sortBy,
-    status,
-    urlReady,
-  ]);
+  }, [isInfinite, listReady, page, resultSetKey, service, status]);
+
+  const showingResultSet = pageItemsKey === resultSetKey;
+  const products = isInfinite
+    ? appendedProducts
+    : showingResultSet
+      ? pageList.items
+      : [];
+  const meta = isInfinite ? appendedMeta : pageMeta;
+  const loading = hasConfigurationError
+    ? false
+    : isInfinite
+      ? status === "loading" ||
+        (status === "authenticated" && (!listReady || appendLoading))
+      : !listReady ||
+        pageList.isLoading ||
+        pageList.isRefetching ||
+        (!showingResultSet && !pageList.isError);
+  const error =
+    hasConfigurationError ||
+    (isInfinite ? status === "error" || appendError : pageList.isError);
 
   const totalPages = meta?.totalPages ?? 0;
   const canLoadMore = paginationStyle === "infinite" && page < totalPages;
@@ -688,24 +666,26 @@ export default function OrderCloudProductList({
 
   const syncUrl = (state: Partial<ProductListUrlState>) => {
     if (isAuthoring || !urlReady) return;
-    writeUrlState(
-      {
-        search,
-        sort,
-        page,
-        selectedFacets,
-        explicitFacetPaths,
-        ...state,
-      },
-      paginationStyle,
-      {
-        defaultFacetPaths,
-        initialSearchTerm,
-        initialSortValue,
-        showFacets,
-        showSearchBar,
-        showSort,
-      },
+    setAppliedLocation(
+      writeUrlState(
+        {
+          search,
+          sort,
+          page,
+          selectedFacets,
+          explicitFacetPaths,
+          ...state,
+        },
+        paginationStyle,
+        {
+          defaultFacetPaths,
+          initialSearchTerm,
+          initialSortValue,
+          showFacets,
+          showSearchBar,
+          showSort,
+        },
+      ),
     );
   };
 
@@ -719,9 +699,8 @@ export default function OrderCloudProductList({
     else delete updated[facet.xpPath];
 
     setPage(1);
-    setProducts([]);
-    setLoading(true);
-    setSelectedFacets(updated);
+    clearAppendedPages();
+    setFacetSelection(updated);
     const nextExplicitFacetPaths = explicitFacetPaths.includes(facet.xpPath)
       ? explicitFacetPaths
       : [...explicitFacetPaths, facet.xpPath];
@@ -735,9 +714,8 @@ export default function OrderCloudProductList({
 
   const clearAllFacets = () => {
     setPage(1);
-    setProducts([]);
-    setLoading(true);
-    setSelectedFacets({});
+    clearAppendedPages();
+    setFacetSelection({});
     const nextExplicitFacetPaths = [
       ...new Set([...explicitFacetPaths, ...defaultFacetPaths]),
     ];
@@ -751,8 +729,7 @@ export default function OrderCloudProductList({
 
   const changeSort = (nextSort: string) => {
     setPage(1);
-    setProducts([]);
-    setLoading(true);
+    clearAppendedPages();
     setSort(nextSort);
     syncUrl({ page: 1, sort: nextSort });
   };
@@ -768,7 +745,7 @@ export default function OrderCloudProductList({
   const firstResult = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastResult = Math.min(page * pageSize, totalCount);
   const pageNumbers = getPageNumbers(page, totalPages);
-  const facets = showFacets ? availableFacets : [];
+  const facets = showFacets && !hasConfigurationError ? availableFacets : [];
   const activeFacetCount = getSelectedFacetCount(selectedFacets);
   const showFacetSkeleton =
     showFacets && loading && products.length === 0 && facets.length === 0;

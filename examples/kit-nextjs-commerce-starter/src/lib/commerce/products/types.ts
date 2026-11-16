@@ -61,11 +61,7 @@ export type CommerceProductFilters = Record<
   string | string[] | number | boolean | undefined
 >;
 
-export interface ProductRequestOptions {
-  signal?: AbortSignal;
-}
-
-export interface ListProductsOptions extends ProductRequestOptions {
+export interface ListProductsOptions {
   catalogId?: string;
   categoryId?: string;
   search?: string;

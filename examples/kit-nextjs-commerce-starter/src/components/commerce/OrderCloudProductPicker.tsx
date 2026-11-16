@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useOrderCloud } from '@/contexts/OrderCloudContext';
+import { useProducts } from '@sitecore-content-sdk/nextjs/commerce';
 import { useMarketplaceClient } from '@/hooks/useMarketplaceClient';
-import type { CommerceProduct } from '@/lib/commerce/products/types';
+import { toCommerceProduct } from '@/lib/commerce/products/mapper';
 import {
   parseProductReferenceList,
   serializeProductReferenceList,
@@ -18,25 +18,38 @@ type OrderCloudProductPickerProps = {
   multiple: boolean;
 };
 
+const SEARCH_DEBOUNCE_MS = 250;
+
 export default function OrderCloudProductPicker({
   multiple,
 }: OrderCloudProductPickerProps) {
-  const {
-    products: productsService,
-    status,
-    error: sessionError,
-  } = useOrderCloud();
   const {
     client,
     error: marketplaceError,
     isLoading: isMarketplaceLoading,
   } = useMarketplaceClient();
   const [query, setQuery] = useState('');
-  const [products, setProducts] = useState<CommerceProduct[]>([]);
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ProductReference[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
-  const [productError, setProductError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const list = useProducts(
+    { search: search || undefined, pageSize: 20 },
+    { select: toCommerceProduct }
+  );
+  const products = list.items;
+  // Hide the previous results while a new search loads.
+  const loadingProducts = list.isLoading || list.isRefetching;
+  const productError = list.error
+    ? list.error.message || 'Unable to load OrderCloud products'
+    : null;
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(
+      () => setSearch(query.trim()),
+      SEARCH_DEBOUNCE_MS
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [query]);
 
   useEffect(() => {
     if (!client) return;
@@ -49,49 +62,6 @@ export default function OrderCloudProductPicker({
       setSelected(parsed ? [parsed] : []);
     });
   }, [client, multiple]);
-
-  useEffect(() => {
-    if (status !== 'authenticated') {
-      setProducts([]);
-      setProductError(
-        status === 'error'
-          ? sessionError?.message ?? 'Unable to start commerce session'
-          : null,
-      );
-      setLoadingProducts(status === 'loading');
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => {
-      setLoadingProducts(true);
-      setProductError(null);
-      void productsService
-        .list({
-          search: query.trim() || undefined,
-          pageSize: 20,
-          signal: controller.signal,
-        })
-        .then((body) => {
-          setProducts(body.items);
-        })
-        .catch((loadError: unknown) => {
-          if (controller.signal.aborted) return;
-          setProducts([]);
-          setProductError(
-            loadError instanceof Error
-              ? loadError.message
-              : 'Unable to load OrderCloud products',
-          );
-        })
-        .finally(() => setLoadingProducts(false));
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [productsService, query, sessionError, status]);
 
   const save = async () => {
     const selectedProduct = selected[0];

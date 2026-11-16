@@ -1,16 +1,15 @@
 import type {
   ListMeta,
-  ListPage,
+  ListProductsOptions as SdkListProductsOptions,
   ProductsApi,
 } from "@sitecore-content-sdk/nextjs/commerce";
-import { hasProductId, toCommerceProduct } from "./mapper";
+import { toCommerceProduct } from "./mapper";
 import type {
   CommerceProduct,
   CommerceProductFacet,
   CommerceProductList,
   CommerceProductXp,
   ListProductsOptions,
-  ProductRequestOptions,
 } from "./types";
 
 const asPositiveInteger = (value: unknown): number | undefined =>
@@ -42,7 +41,10 @@ const toFacets = (meta: ListMeta): CommerceProductFacet[] =>
     return [{ name, xpPath, values }];
   });
 
-const toMeta = (meta: ListMeta | undefined): CommerceProductList["meta"] =>
+/** Maps SDK list metadata (paging, raw `Facets`) to the starter's list meta. */
+export const toProductListMeta = (
+  meta: ListMeta | null | undefined,
+): CommerceProductList["meta"] =>
   meta
     ? {
         page: asPositiveInteger(meta.Page),
@@ -53,66 +55,56 @@ const toMeta = (meta: ListMeta | undefined): CommerceProductList["meta"] =>
       }
     : undefined;
 
-const toProducts = (page: ListPage<unknown>): CommerceProduct[] =>
-  (Array.isArray(page?.Items) ? page.Items : [])
-    .filter(hasProductId)
-    .map(toCommerceProduct);
+/** Maps the starter's list options to SDK `products.list` / `useProducts` params. */
+export const toProductListParams = (
+  options: ListProductsOptions = {},
+): SdkListProductsOptions => ({
+  catalogID: options.catalogId?.trim() || undefined,
+  categoryID: options.categoryId?.trim() || undefined,
+  search: options.search?.trim() || undefined,
+  sortBy: options.sortBy,
+  page: options.page,
+  pageSize: options.pageSize,
+  filters: options.filters,
+});
+
+/** Trimmed, de-duplicated product IDs in their original order. */
+export const toUniqueProductIds = (productIds: string[]): string[] => [
+  ...new Set(
+    productIds
+      .map((productId) => productId.trim())
+      .filter((productId) => productId.length > 0),
+  ),
+];
+
+/** Orders `products` by `productIds`, dropping products that were not requested. */
+export const orderProductsByIds = (
+  products: CommerceProduct[],
+  productIds: string[],
+): CommerceProduct[] => {
+  const productsById = new Map(
+    products.map((product): [string, CommerceProduct] => [product.id, product]),
+  );
+  return productIds.flatMap((productId) => {
+    const product = productsById.get(productId);
+    return product ? [product] : [];
+  });
+};
 
 /**
- * Product list reads for listing components and the product picker, on the SDK shopper session.
- * Single-product reads (product, specs, variants) go through the SDK `ProductProvider`.
+ * One page of products through the SDK `products.list`. Only for lists that append pages
+ * (infinite scroll), which `useProducts` does not support; everything else uses `useProducts`.
  */
-export class ProductsService {
-  constructor(private readonly api: Pick<ProductsApi, "list">) {}
-
-  async list(options: ListProductsOptions = {}): Promise<CommerceProductList> {
-    const response = await this.api.list<CommerceProductXp>(
-      {
-        catalogID: options.catalogId?.trim() || undefined,
-        categoryID: options.categoryId?.trim() || undefined,
-        search: options.search?.trim() || undefined,
-        sortBy: options.sortBy,
-        page: options.page,
-        pageSize: options.pageSize,
-        filters: options.filters,
-      },
-      { signal: options.signal },
-    );
-
-    return { items: toProducts(response), meta: toMeta(response?.Meta) };
-  }
-
-  async listByIds(
-    productIds: string[],
-    options: ProductRequestOptions = {},
-  ): Promise<CommerceProductList> {
-    const uniqueIds = [
-      ...new Set(
-        productIds
-          .map((productId) => productId.trim())
-          .filter((productId) => productId.length > 0),
-      ),
-    ];
-
-    if (uniqueIds.length === 0) {
-      return { items: [], meta: { totalCount: 0 } };
-    }
-
-    const response = await this.api.list<CommerceProductXp>(
-      { pageSize: uniqueIds.length, filters: { ID: uniqueIds } },
-      { signal: options.signal },
-    );
-    const productsById = new Map(
-      toProducts(response).map((product): [string, CommerceProduct] => [
-        product.id,
-        product,
-      ]),
-    );
-    const items = uniqueIds.flatMap((productId) => {
-      const product = productsById.get(productId);
-      return product ? [product] : [];
-    });
-
-    return { items, meta: { totalCount: items.length } };
-  }
-}
+export const listProductPage = async (
+  api: Pick<ProductsApi, "list">,
+  params: SdkListProductsOptions,
+  options: { signal?: AbortSignal } = {},
+): Promise<CommerceProductList> => {
+  const response = await api.list<CommerceProductXp>(params, options);
+  return {
+    items: (Array.isArray(response?.Items) ? response.Items : []).map(
+      toCommerceProduct,
+    ),
+    meta: toProductListMeta(response?.Meta),
+  };
+};
