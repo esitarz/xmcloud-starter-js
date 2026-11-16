@@ -40,7 +40,7 @@ export function StandaloneCommerceProviders({
 
   return (
     <SitecoreProvider api={scConfig.api} componentMap={EMPTY_COMPONENT_MAP} page={page}>
-      <CommerceProvider>
+      <CommerceProvider timeout={10_000}>
         <OrderCloudProvider>{children}</OrderCloudProvider>
       </CommerceProvider>
     </SitecoreProvider>

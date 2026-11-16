@@ -1,14 +1,11 @@
 import type {
   ListMeta,
   ListProductsOptions as SdkListProductsOptions,
-  ProductsApi,
 } from "@sitecore-content-sdk/nextjs/commerce";
-import { toCommerceProduct } from "./mapper";
 import type {
   CommerceProduct,
   CommerceProductFacet,
   CommerceProductList,
-  CommerceProductXp,
   ListProductsOptions,
 } from "./types";
 
@@ -89,22 +86,4 @@ export const orderProductsByIds = (
     const product = productsById.get(productId);
     return product ? [product] : [];
   });
-};
-
-/**
- * One page of products through the SDK `products.list`. Only for lists that append pages
- * (infinite scroll), which `useProducts` does not support; everything else uses `useProducts`.
- */
-export const listProductPage = async (
-  api: Pick<ProductsApi, "list">,
-  params: SdkListProductsOptions,
-  options: { signal?: AbortSignal } = {},
-): Promise<CommerceProductList> => {
-  const response = await api.list<CommerceProductXp>(params, options);
-  return {
-    items: (Array.isArray(response?.Items) ? response.Items : []).map(
-      toCommerceProduct,
-    ),
-    meta: toProductListMeta(response?.Meta),
-  };
 };

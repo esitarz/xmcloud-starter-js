@@ -49,7 +49,7 @@ export function OrderCloudProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(clearLegacyTokenCookies, []);
 
-  // Cart components (and infinite-scroll product lists) wait for a session, so start one on mount.
+  // Cart components wait for a session, so start one on mount.
   useEffect(() => {
     if (sdkStatus === 'idle') ensureSession().catch(() => undefined);
   }, [sdkStatus, ensureSession]);

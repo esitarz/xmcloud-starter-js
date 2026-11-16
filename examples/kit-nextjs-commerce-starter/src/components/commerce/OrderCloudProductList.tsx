@@ -7,12 +7,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useCommerce, useProducts } from "@sitecore-content-sdk/nextjs/commerce";
-import { useOrderCloud } from "@/contexts/OrderCloudContext";
+import {
+  useInfiniteProducts,
+  useProducts,
+} from "@sitecore-content-sdk/nextjs/commerce";
 import { buildProductDetailHref } from "@/lib/commerce/products/href";
 import { toCommerceProduct } from "@/lib/commerce/products/mapper";
 import {
-  listProductPage,
   toProductListMeta,
   toProductListParams,
 } from "@/lib/commerce/products/service";
@@ -29,7 +30,6 @@ import type {
   CommerceProduct,
   CommerceProductFacet,
   CommerceProductFilters,
-  CommerceProductList,
 } from "@/lib/commerce/products/types";
 import OrderCloudProductCard from "./OrderCloudProductCard";
 
@@ -71,21 +71,16 @@ type FacetPanelProps = {
   onClearAll: () => void;
 };
 
-const REQUEST_TIMEOUT_MS = 10_000;
 const SEARCH_DEBOUNCE_MS = 300;
 const SEARCH_PARAM = "search";
 const SORT_PARAM = "sort";
 const PAGE_PARAM = "page";
 const FACET_PARAM_PREFIX = "facet.";
 
-const mergeUniqueProducts = (
-  existing: CommerceProduct[],
-  incoming: CommerceProduct[],
-): CommerceProduct[] => {
-  const products = new Map(existing.map((product) => [product.id, product]));
-  for (const product of incoming) products.set(product.id, product);
-  return [...products.values()];
-};
+// Appended pages can overlap if the catalog changes between page loads.
+const uniqueProducts = (products: CommerceProduct[]): CommerceProduct[] => [
+  ...new Map(products.map((product) => [product.id, product])).values(),
+];
 
 const getSelectedFacetCount = (
   selectedFacets: Record<string, string[]>,
@@ -307,8 +302,6 @@ export default function OrderCloudProductList({
   renderingIdentifier,
   styles,
 }: OrderCloudProductListProps) {
-  const { status } = useOrderCloud();
-  const { service } = useCommerce();
   const isInfinite = paginationStyle === "infinite";
   const resolvedDetailPageHref = detailPageHref?.trim() || undefined;
   const idPrefix = renderingIdentifier ?? "product-list";
@@ -331,29 +324,17 @@ export default function OrderCloudProductList({
     CommerceProductFacet[]
   >([]);
   const [page, setPage] = useState(1);
-  // Infinite scroll appends pages, which `useProducts` does not support, so it loads by hand.
-  const [appendedProducts, setAppendedProducts] = useState<CommerceProduct[]>(
-    [],
-  );
-  const [appendedMeta, setAppendedMeta] =
-    useState<CommerceProductList["meta"]>();
-  const [appendLoading, setAppendLoading] = useState(true);
-  const [appendError, setAppendError] = useState(false);
+  // Only a page change keeps the current page visible; a new search, sort or filter shows skeletons.
+  const [keepPageVisible, setKeepPageVisible] = useState(false);
   const [availableFacets, setAvailableFacets] = useState<
     CommerceProductFacet[]
   >([]);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const loadMorePendingRef = useRef(false);
   const resultsHeadingRef = useRef<HTMLHeadingElement>(null);
   const focusResultsAfterLoad = useRef(false);
   const productFiltersKey = JSON.stringify(productFilters ?? {});
   const hasConfigurationError = productFilterErrors.length > 0;
-
-  const clearAppendedPages = () => {
-    setAppendedProducts([]);
-    setAppendLoading(true);
-  };
 
   const [authoredSortValue, setAuthoredSortValue] = useState(initialSortValue);
   if (isAuthoring && authoredSortValue !== initialSortValue) {
@@ -381,7 +362,7 @@ export default function OrderCloudProductList({
     setFacetSelection(showFacets ? state.selectedFacets : {});
     setExplicitFacetPaths(showFacets ? state.explicitFacetPaths : []);
     setPage(paginationStyle === "standard" ? state.page : 1);
-    clearAppendedPages();
+    setKeepPageVisible(false);
   }
   const urlReady = isAuthoring || appliedLocation !== null;
 
@@ -451,7 +432,7 @@ export default function OrderCloudProductList({
       const nextSearch = searchInput.trim();
       if (nextSearch === search) return;
       setPage(1);
-      clearAppendedPages();
+      setKeepPageVisible(false);
       setSearch(nextSearch);
       if (!isAuthoring && urlReady) {
         setAppliedLocation(
@@ -514,122 +495,54 @@ export default function OrderCloudProductList({
     filters,
     pageSize,
   });
-  // Everything but the page: a change here starts a new result set.
-  const resultSetKey = JSON.stringify(resultSetParams);
 
-  const recordFacets = (facets: CommerceProductFacet[]) => {
+  const pageList = useProducts(
+    { ...resultSetParams, page: paginationStyle === "none" ? 1 : page },
+    {
+      select: toCommerceProduct,
+      enabled: listReady && !isInfinite,
+      keepPreviousData: keepPageVisible,
+    },
+  );
+  const infiniteList = useInfiniteProducts(resultSetParams, {
+    select: toCommerceProduct,
+    enabled: listReady && isInfinite,
+    keepPreviousData: false,
+  });
+  const list = isInfinite ? infiniteList : pageList;
+  const meta = useMemo(() => toProductListMeta(list.meta), [list.meta]);
+  const products = useMemo(
+    () => (isInfinite ? uniqueProducts(list.items) : list.items),
+    [isInfinite, list.items],
+  );
+
+  // Facets seen in any result stay available, so narrowing a filter does not hide its siblings.
+  const [seenListMeta, setSeenListMeta] = useState(list.meta);
+  if (seenListMeta !== list.meta) {
+    setSeenListMeta(list.meta);
+    const facets = meta?.facets ?? [];
     setAvailableFacets((current) => mergeProductFacets(current, facets));
     setListFacetDefinitions((current) =>
       current.length ? current : mergeProductFacets(current, facets),
     );
-  };
-
-  const pageList = useProducts(
-    { ...resultSetParams, page: paginationStyle === "none" ? 1 : page },
-    { select: toCommerceProduct, enabled: listReady && !isInfinite },
-  );
-  const pageMeta = useMemo(
-    () => toProductListMeta(pageList.meta),
-    [pageList.meta],
-  );
-
-  // A new result set replaces the grid with skeletons; a page change keeps the current page visible.
-  const [pageItems, setPageItems] = useState(pageList.items);
-  const [pageItemsKey, setPageItemsKey] = useState<string | null>(null);
-  if (pageItems !== pageList.items) {
-    setPageItems(pageList.items);
-    if (pageList.isSuccess && !pageList.isRefetching) {
-      setPageItemsKey(resultSetKey);
-      recordFacets(pageMeta?.facets ?? []);
-    }
   }
 
   useEffect(() => {
-    if (pageList.error) {
-      console.error("Product list request failed", pageList.error);
-    }
-  }, [pageList.error]);
+    if (list.error) console.error("Product list request failed", list.error);
+  }, [list.error]);
 
-  useEffect(() => {
-    if (!isInfinite || !listReady || status !== "authenticated" || !service) {
-      return;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    let timedOut = false;
-    const timeoutId = window.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, REQUEST_TIMEOUT_MS);
-
-    const loadProducts = async () => {
-      setAppendLoading(true);
-      setAppendError(false);
-      try {
-        const payload = await listProductPage(
-          service.products,
-          { ...JSON.parse(resultSetKey), page },
-          { signal: controller.signal },
-        );
-        if (!active) return;
-        setAppendedProducts((current) =>
-          page > 1 ? mergeUniqueProducts(current, payload.items) : payload.items,
-        );
-        setAppendedMeta(payload.meta);
-        setAvailableFacets((current) =>
-          mergeProductFacets(current, payload.meta?.facets ?? []),
-        );
-        setListFacetDefinitions((current) =>
-          current.length
-            ? current
-            : mergeProductFacets(current, payload.meta?.facets ?? []),
-        );
-      } catch (loadError) {
-        if (!active || (controller.signal.aborted && !timedOut)) return;
-        console.error("Product list request failed", loadError);
-        setAppendedProducts([]);
-        setAppendedMeta(undefined);
-        setAppendError(true);
-      } finally {
-        window.clearTimeout(timeoutId);
-        if (active) {
-          loadMorePendingRef.current = false;
-          setAppendLoading(false);
-        }
-      }
-    };
-
-    void loadProducts();
-    return () => {
-      active = false;
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [isInfinite, listReady, page, resultSetKey, service, status]);
-
-  const showingResultSet = pageItemsKey === resultSetKey;
-  const products = isInfinite
-    ? appendedProducts
-    : showingResultSet
-      ? pageList.items
-      : [];
-  const meta = isInfinite ? appendedMeta : pageMeta;
-  const loading = hasConfigurationError
-    ? false
-    : isInfinite
-      ? status === "loading" ||
-        (status === "authenticated" && (!listReady || appendLoading))
-      : !listReady ||
-        pageList.isLoading ||
-        pageList.isRefetching ||
-        (!showingResultSet && !pageList.isError);
-  const error =
-    hasConfigurationError ||
-    (isInfinite ? status === "error" || appendError : pageList.isError);
+  const loading =
+    !hasConfigurationError &&
+    (!listReady ||
+      list.isLoading ||
+      list.isRefetching ||
+      infiniteList.isFetchingNextPage);
+  const error = hasConfigurationError || list.isError;
 
   const totalPages = meta?.totalPages ?? 0;
-  const canLoadMore = paginationStyle === "infinite" && page < totalPages;
+  const { fetchNextPage, isFetchNextPageError } = infiniteList;
+  const canLoadMore =
+    isInfinite && infiniteList.hasNextPage && !isFetchNextPageError;
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -643,15 +556,13 @@ export default function OrderCloudProductList({
     }
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry?.isIntersecting || loadMorePendingRef.current) return;
-        loadMorePendingRef.current = true;
-        setPage((current) => current + 1);
+        if (entry?.isIntersecting) void fetchNextPage();
       },
       { rootMargin: "0px 0px 600px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [canLoadMore, loading]);
+  }, [canLoadMore, fetchNextPage, loading]);
 
   useEffect(() => {
     if (!loading && focusResultsAfterLoad.current) {
@@ -699,7 +610,7 @@ export default function OrderCloudProductList({
     else delete updated[facet.xpPath];
 
     setPage(1);
-    clearAppendedPages();
+    setKeepPageVisible(false);
     setFacetSelection(updated);
     const nextExplicitFacetPaths = explicitFacetPaths.includes(facet.xpPath)
       ? explicitFacetPaths
@@ -714,7 +625,7 @@ export default function OrderCloudProductList({
 
   const clearAllFacets = () => {
     setPage(1);
-    clearAppendedPages();
+    setKeepPageVisible(false);
     setFacetSelection({});
     const nextExplicitFacetPaths = [
       ...new Set([...explicitFacetPaths, ...defaultFacetPaths]),
@@ -729,7 +640,7 @@ export default function OrderCloudProductList({
 
   const changeSort = (nextSort: string) => {
     setPage(1);
-    clearAppendedPages();
+    setKeepPageVisible(false);
     setSort(nextSort);
     syncUrl({ page: 1, sort: nextSort });
   };
@@ -737,6 +648,7 @@ export default function OrderCloudProductList({
   const changePage = (nextPage: number) => {
     if (nextPage === page || nextPage < 1 || nextPage > totalPages) return;
     focusResultsAfterLoad.current = true;
+    setKeepPageVisible(true);
     setPage(nextPage);
     syncUrl({ page: nextPage });
   };
@@ -999,11 +911,24 @@ export default function OrderCloudProductList({
               className="py-3 text-center text-sm text-slate-500"
               aria-live="polite"
             >
-              {loading
-                ? "Loading more products…"
-                : canLoadMore
-                  ? ""
-                  : "All products loaded"}
+              {loading ? (
+                "Loading more products…"
+              ) : isFetchNextPageError ? (
+                <span role="alert">
+                  More products are temporarily unavailable.{" "}
+                  <button
+                    type="button"
+                    onClick={() => void fetchNextPage()}
+                    className="font-medium underline"
+                  >
+                    Try again
+                  </button>
+                </span>
+              ) : canLoadMore ? (
+                ""
+              ) : (
+                "All products loaded"
+              )}
             </div>
           )}
 

@@ -34,11 +34,10 @@ export default function OrderCloudProductPicker({
   const [saving, setSaving] = useState(false);
   const list = useProducts(
     { search: search || undefined, pageSize: 20 },
-    { select: toCommerceProduct }
+    { select: toCommerceProduct, keepPreviousData: false }
   );
   const products = list.items;
-  // Hide the previous results while a new search loads.
-  const loadingProducts = list.isLoading || list.isRefetching;
+  const loadingProducts = list.isLoading;
   const productError = list.error
     ? list.error.message || 'Unable to load OrderCloud products'
     : null;

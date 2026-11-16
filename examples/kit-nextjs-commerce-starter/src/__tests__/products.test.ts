@@ -1,18 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import type { ProductsApi } from "@sitecore-content-sdk/nextjs/commerce";
+import { describe, expect, it } from "vitest";
 import { toCommerceProduct } from "../lib/commerce/products/mapper";
 import {
-  listProductPage,
   orderProductsByIds,
   toProductListMeta,
   toProductListParams,
   toUniqueProductIds,
 } from "../lib/commerce/products/service";
-
-const createApi = (response: unknown) => {
-  const list = vi.fn().mockResolvedValue(response);
-  return { list: list as unknown as ProductsApi["list"], mock: list };
-};
 
 describe("toProductListParams", () => {
   it("maps starter options to SDK list params", () => {
@@ -88,31 +81,6 @@ describe("toProductListMeta", () => {
 
   it("returns undefined without metadata", () => {
     expect(toProductListMeta(null)).toBeUndefined();
-  });
-});
-
-describe("listProductPage", () => {
-  it("loads one page through the SDK and maps it", async () => {
-    const controller = new AbortController();
-    const api = createApi({
-      Items: [{ ID: "P-1", Name: "Headphones" }],
-      Meta: { Page: 1, PageSize: 10, TotalCount: 1, TotalPages: 1 },
-    });
-
-    await expect(
-      listProductPage(
-        api,
-        { search: "head", page: 1, pageSize: 10 },
-        { signal: controller.signal },
-      ),
-    ).resolves.toEqual({
-      items: [{ id: "P-1", name: "Headphones", images: [] }],
-      meta: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1, facets: [] },
-    });
-    expect(api.mock).toHaveBeenCalledWith(
-      { search: "head", page: 1, pageSize: 10 },
-      { signal: controller.signal },
-    );
   });
 });
 

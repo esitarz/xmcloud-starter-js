@@ -32,7 +32,7 @@ export default function Providers({
     >
       <RoutePathProvider routePath={routePath}>
         {/* Route-handler tokens via app/api/commerce/token; in-memory in editing/preview */}
-        <CommerceProvider>
+        <CommerceProvider timeout={10_000}>
           <OrderCloudProvider>
             <ComponentPropsContext value={componentProps}>
               {children}
