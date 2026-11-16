@@ -13,45 +13,51 @@ import { CATALOG_LIST_HREF } from '@/lib/commerce/products/list-source';
 
 export default function ShoppingCart() {
   const { ensureSession, cart, status, error: sessionError } = useOrderCloud();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [payload, setPayload] = useState<CommerceCart | null>(null);
+  const [loaded, setLoaded] = useState<{
+    source: typeof cart;
+    seed: number;
+    cart: CommerceCart | null;
+    error: string | null;
+  } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [startingCheckout, setStartingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (status !== 'authenticated') {
-      setPayload(null);
-      setError(status === 'error' ? sessionError?.message ?? 'Unable to start commerce session' : null);
-      setLoading(status === 'loading');
-      return;
-    }
+    if (status !== 'authenticated') return;
 
     let active = true;
-    setLoading(true);
-
     void cart
       .get()
       .then((nextCart) => {
-        if (!active) return;
-        setPayload(nextCart);
-        setError(null);
+        if (active) setLoaded({ source: cart, seed: refreshSeed, cart: nextCart, error: null });
       })
       .catch((loadError: unknown) => {
         if (!active) return;
-        setPayload(null);
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load cart');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+        setLoaded({
+          source: cart,
+          seed: refreshSeed,
+          cart: null,
+          error: loadError instanceof Error ? loadError.message : 'Unable to load cart',
+        });
       });
 
     return () => {
       active = false;
     };
-  }, [cart, refreshSeed, sessionError, status]);
+  }, [cart, refreshSeed, status]);
+
+  const isAuthenticated = status === 'authenticated';
+  const loading =
+    status === 'loading' ||
+    (isAuthenticated && (loaded?.source !== cart || loaded.seed !== refreshSeed));
+  const payload = isAuthenticated ? loaded?.cart ?? null : null;
+  const error =
+    status === 'error'
+      ? sessionError?.message ?? 'Unable to start commerce session'
+      : actionError ?? (isAuthenticated ? loaded?.error ?? null : null);
 
   const checkout = async () => {
     setStartingCheckout(true);
@@ -80,12 +86,12 @@ export default function ShoppingCart() {
   const changeQuantity = async (lineItemId: string, quantity: number) => {
     if (quantity < 1) return;
     setUpdatingId(lineItemId);
-    setError(null);
+    setActionError(null);
     try {
       await cart.updateItem({ lineItemId, quantity });
       setRefreshSeed((value) => value + 1);
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Unable to update quantity');
+      setActionError(updateError instanceof Error ? updateError.message : 'Unable to update quantity');
     } finally {
       setUpdatingId(null);
     }
@@ -93,12 +99,12 @@ export default function ShoppingCart() {
 
   const removeItem = async (lineItemId: string) => {
     setUpdatingId(lineItemId);
-    setError(null);
+    setActionError(null);
     try {
       await cart.removeItem(lineItemId);
       setRefreshSeed((value) => value + 1);
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : 'Unable to remove item');
+      setActionError(removeError instanceof Error ? removeError.message : 'Unable to remove item');
     } finally {
       setUpdatingId(null);
     }
