@@ -65,9 +65,10 @@ describe("CartService", () => {
     const { request, mock } = createRequest();
 
     await new CartService(request).addItem({
-      productId: "SKU-123",
-      quantity: 2,
-      specs: [
+      ProductID: "SKU-123",
+      VariantID: "SKU-123-S",
+      Quantity: 2,
+      Specs: [
         { SpecID: "SIZE", OptionID: "SMALL" },
         { SpecID: "ENGRAVING", Value: "Codex" },
       ],
@@ -100,7 +101,11 @@ describe("CartService", () => {
       return init?.method === "DELETE" ? "" : {};
     });
 
-    await new CartService(request).addItem({ productId: "SKU-123", quantity: 1 });
+    await new CartService(request).addItem({
+      ProductID: "SKU-123",
+      Quantity: 1,
+      Specs: [],
+    });
 
     expect(mock).toHaveBeenCalledWith("/v1/cart", { method: "DELETE" });
     expect(
@@ -114,7 +119,11 @@ describe("CartService", () => {
     });
 
     await expect(
-      new CartService(request).addItem({ productId: "SKU-123", quantity: 1 }),
+      new CartService(request).addItem({
+        ProductID: "SKU-123",
+        Quantity: 1,
+        Specs: [],
+      }),
     ).rejects.toThrow("Bad request");
     expect(mock).toHaveBeenCalledTimes(1);
   });

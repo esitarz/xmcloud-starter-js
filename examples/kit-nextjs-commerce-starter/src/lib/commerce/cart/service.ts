@@ -42,10 +42,11 @@ export class CartService {
   }
 
   async addItem(input: AddCartItemInput): Promise<void> {
+    // OrderCloud resolves the variant from Specs; VariantID is informational.
     const lineItem = {
-      ProductID: input.productId,
-      Quantity: input.quantity,
-      ...(input.specs?.length ? { Specs: input.specs } : {}),
+      ProductID: input.ProductID,
+      Quantity: input.Quantity,
+      ...(input.Specs.length ? { Specs: input.Specs } : {}),
     } satisfies LineItem;
     const create = () =>
       this.request("/v1/cart/lineitems", { method: "POST", ...json(lineItem) });

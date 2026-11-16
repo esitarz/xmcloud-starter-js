@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type React from "react";
 import Link from "next/link";
 import type { ComponentProps } from "@/lib/component-props";
@@ -15,6 +15,7 @@ import {
   useStarterProduct,
 } from "@/hooks/useStarterProduct";
 import { getCartDestinationFromRoute } from "@/lib/commerce/cart/destination";
+import { getSpecIssueMessage } from "@/lib/commerce/products/specs";
 
 type SubmissionStatus = "idle" | "adding" | "added" | "error";
 
@@ -35,18 +36,20 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     null,
   );
   const productId = productData?.productId;
+  const selections = selection?.selections;
+  const [seenProductId, setSeenProductId] = useState(productId);
+  const [seenSelections, setSeenSelections] = useState(selections);
 
-  useEffect(() => {
+  if (seenProductId !== productId) {
+    setSeenProductId(productId);
     setQuantity("1");
     setQuantityError(null);
+  }
+  if (seenProductId !== productId || seenSelections !== selections) {
+    setSeenSelections(selections);
     setSubmissionStatus("idle");
     setSubmissionMessage(null);
-  }, [productId]);
-
-  useEffect(() => {
-    setSubmissionStatus("idle");
-    setSubmissionMessage(null);
-  }, [selection?.selections]);
+  }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -67,10 +70,11 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     );
     const draft = isComplete ? selection.getLineItemDraft() : null;
     if (!draft) {
+      const productIssue = selection.issues.find((issue) => !issue.specId);
       setSubmissionStatus("error");
       setSubmissionMessage(
-        selection.issues.some((issue) => issue.code === "variant-unavailable")
-          ? "This product option combination is unavailable."
+        productIssue
+          ? getSpecIssueMessage(productIssue)
           : "Select the required product options.",
       );
       return;
@@ -78,11 +82,7 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     if (!hasValidQuantity) return;
 
     const addItem = () =>
-      cart.addItem({
-        productId: draft.ProductID,
-        quantity: normalizedQuantity,
-        specs: draft.Specs,
-      });
+      cart.addItem({ ...draft, Quantity: normalizedQuantity });
 
     setSubmissionStatus("adding");
     setSubmissionMessage(null);

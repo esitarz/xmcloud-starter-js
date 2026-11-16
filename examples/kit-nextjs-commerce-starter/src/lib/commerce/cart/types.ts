@@ -1,4 +1,4 @@
-import type { LineItemSpec } from '@sitecore-content-sdk/nextjs/commerce';
+import type { ProductLineItemDraft } from '@sitecore-content-sdk/nextjs/commerce';
 
 export interface CommerceCartItemSpec {
   specId: string;
@@ -29,11 +29,8 @@ export interface CommerceCart {
   items: CommerceCartItem[];
 }
 
-export interface AddCartItemInput {
-  productId: string;
-  quantity: number;
-  specs?: LineItemSpec[];
-}
+/** SDK `getLineItemDraft()` result plus quantity (the shape M3 `addLineItem` will accept). */
+export type AddCartItemInput = ProductLineItemDraft & { Quantity: number };
 
 export interface UpdateCartItemInput {
   lineItemId: string;
