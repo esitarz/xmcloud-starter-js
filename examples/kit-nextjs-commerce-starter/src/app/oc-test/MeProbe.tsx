@@ -1,7 +1,8 @@
 'use client';
-import { CommerceProvider, useCommerce, useShopper } from '@sitecore-content-sdk/nextjs/commerce';
+import { useCommerce, useShopper } from '@sitecore-content-sdk/nextjs/commerce';
 
-function Me() {
+// Rendered inside src/Providers, which mounts the app-wide CommerceProvider.
+export function MeProbe() {
   const { status, session, error: sessionError } = useCommerce();
   const { user, userType, status: meStatus, error, refetch } = useShopper();
 
@@ -15,13 +16,5 @@ function Me() {
       <br />
       <button onClick={() => refetch()}>Refetch /v1/me</button>
     </pre>
-  );
-}
-
-export function MeProbe() {
-  return (
-    <CommerceProvider>
-      <Me />
-    </CommerceProvider>
   );
 }

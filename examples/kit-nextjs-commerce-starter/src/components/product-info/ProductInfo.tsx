@@ -2,7 +2,10 @@
 
 import type React from "react";
 import type { ComponentProps } from "@/lib/component-props";
-import { useProductContext } from "@/contexts/ProductDataContext";
+import {
+  getProductStatusMessage,
+  useStarterProduct,
+} from "@/hooks/useStarterProduct";
 
 const formatPrice = (price?: number, currency?: string): string => {
   if (price === undefined) return "Price unavailable";
@@ -17,7 +20,7 @@ const formatPrice = (price?: number, currency?: string): string => {
 };
 
 export const Default: React.FC<ComponentProps> = ({ params, page }) => {
-  const productData = useProductContext();
+  const productData = useStarterProduct();
   const isAuthoring = page.mode.isEditing || page.mode.isDesignLibrary;
 
   if (!productData) {
@@ -28,10 +31,7 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     ) : null;
   }
 
-  if (
-    productData.status === "loading-session" ||
-    productData.status === "loading-product"
-  ) {
+  if (productData.isLoading) {
     return (
       <div
         className={`space-y-4 py-2 animate-pulse ${params.styles ?? ""}`}
@@ -48,15 +48,11 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     );
   }
 
-  if (productData.status !== "ready" || !productData.product) {
+  if (!productData.isSuccess || !productData.product) {
     if (!isAuthoring) return null;
     const message =
-      productData.status === "configuration-error"
-        ? "Configure Product Source and its corresponding product ID on ProductContainer."
-        : productData.status === "not-found"
-          ? `Product ${productData.productId ?? ""} was not found.`
-          : (productData.error?.message ??
-            "Unable to load product information.");
+      getProductStatusMessage(productData, "Unable to load product information.") ??
+      "Unable to load product information.";
 
     return (
       <div className="rounded border border-dashed p-3 text-sm text-slate-600">

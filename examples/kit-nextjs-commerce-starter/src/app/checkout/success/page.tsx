@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { readStoredOrderCloudToken } from '@/lib/commerce/auth/token-store';
+import { StandaloneCommerceProviders } from '@/contexts/StandaloneCommerceProviders';
+import { useOrderCloud } from '@/contexts/OrderCloudContext';
 import {
   CHECKOUT_ORDER_ID_STORAGE_KEY,
   isTerminalCheckoutStatus,
@@ -28,6 +29,7 @@ const pollDelayMs = (attempt: number): number => {
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
   const stripeSessionId = searchParams.get('session_id')?.trim() || '';
+  const { ensureSession } = useOrderCloud();
   const [status, setStatus] = useState<CheckoutStatusPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const attemptRef = useRef(0);
@@ -38,7 +40,9 @@ function CheckoutSuccessContent() {
 
     const poll = async () => {
       try {
-        const token = readStoredOrderCloudToken()?.accessToken;
+        const token = await ensureSession()
+          .then((session) => session.accessToken)
+          .catch(() => undefined);
         const orderId =
           typeof window !== 'undefined'
             ? sessionStorage.getItem(CHECKOUT_ORDER_ID_STORAGE_KEY)
@@ -86,7 +90,7 @@ function CheckoutSuccessContent() {
       active = false;
       clearTimeout(timeoutId);
     };
-  }, [stripeSessionId]);
+  }, [ensureSession, stripeSessionId]);
 
   const checkoutStatus = status?.checkoutStatus ?? 'Pending';
 
@@ -125,8 +129,10 @@ function CheckoutSuccessContent() {
 
 export default function CheckoutSuccessPage() {
   return (
-    <Suspense fallback={<main className="px-6 py-16">Loading confirmation…</main>}>
-      <CheckoutSuccessContent />
-    </Suspense>
+    <StandaloneCommerceProviders>
+      <Suspense fallback={<main className="px-6 py-16">Loading confirmation…</main>}>
+        <CheckoutSuccessContent />
+      </Suspense>
+    </StandaloneCommerceProviders>
   );
 }

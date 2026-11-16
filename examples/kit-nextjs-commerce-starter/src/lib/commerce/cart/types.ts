@@ -1,4 +1,4 @@
-import type { LineItemSpec } from 'ordercloud-javascript-sdk';
+import type { LineItemSpec } from '@sitecore-content-sdk/nextjs/commerce';
 
 export interface CommerceCartItemSpec {
   specId: string;

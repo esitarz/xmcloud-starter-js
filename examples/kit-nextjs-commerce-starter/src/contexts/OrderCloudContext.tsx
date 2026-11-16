@@ -1,185 +1,84 @@
 'use client';
 
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import {
-  configureOrderCloudSdk,
-  hasOrderCloudStatus,
-  requestAnonymousOrderCloudToken,
-  runOrderCloudOperation,
-  type CommerceRequest,
-  type CommerceRequestOptions,
-} from '@/lib/commerce/client';
+  useCommerce,
+  type CommerceError,
+  type ShopperSession,
+} from '@sitecore-content-sdk/nextjs/commerce';
 import {
-  clearStoredOrderCloudToken,
-  readStoredOrderCloudToken,
-  writeStoredOrderCloudToken,
-  type StoredOrderCloudToken,
-} from '@/lib/commerce/auth/token-store';
-import { createOrderCloudServices, type OrderCloudServices } from '@/lib/commerce/services';
+  createOrderCloudServices,
+  createUnavailableServices,
+  type OrderCloudServices,
+} from '@/lib/commerce/services';
 
 export type OrderCloudAuthStatus = 'loading' | 'authenticated' | 'error';
 
 export interface OrderCloudContextValue extends OrderCloudServices {
   status: OrderCloudAuthStatus;
   isAuthenticated: boolean;
-  accessToken: string | null;
-  error: Error | null;
-  startFreshAnonymousSession: () => Promise<void>;
+  error: CommerceError | null;
+  /** Returns a usable SDK shopper session (e.g. to send its access token to checkout routes). */
+  ensureSession: () => Promise<ShopperSession>;
+  /** Drops the current shopper session and starts a new anonymous one. */
+  resetSession: () => Promise<void>;
 }
 
 const OrderCloudContext = createContext<OrderCloudContextValue | undefined>(undefined);
-let authenticationPromise: Promise<StoredOrderCloudToken> | null = null;
-const TRANSIENT_AUTH_RETRY_DELAYS_MS = [100, 250] as const;
 
-const requestAnonymousOrderCloudTokenWithRetry = async (): Promise<{
-  accessToken: string;
-  expiresIn: number;
-}> => {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await requestAnonymousOrderCloudToken();
-    } catch (error) {
-      const retryDelay = TRANSIENT_AUTH_RETRY_DELAYS_MS[attempt];
-      const status =
-        error && typeof error === 'object' && 'status' in error
-          ? (error as { status?: unknown }).status
-          : undefined;
-      const isTransientServerError =
-        typeof status === 'number' && status >= 500 && status < 600;
+// Cookie written by the starter's previous, self-managed anonymous session.
+const LEGACY_TOKEN_COOKIES = ['oc_anonymous_token', process.env.NEXT_PUBLIC_ORDERCLOUD_AUTH_COOKIE_NAME]
+  .map((name) => name?.trim())
+  .filter((name): name is string => !!name && /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name));
 
-      if (!isTransientServerError || retryDelay === undefined) {
-        throw error;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+const clearLegacyTokenCookies = (): void => {
+  for (const name of LEGACY_TOKEN_COOKIES) {
+    if (document.cookie.split(';').some((cookie) => cookie.trim().startsWith(`${name}=`))) {
+      document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
     }
   }
 };
 
-const authenticateAnonymous = async (forceNewToken = false): Promise<StoredOrderCloudToken> => {
-  if (!forceNewToken) {
-    const storedToken = readStoredOrderCloudToken();
-    if (storedToken) return storedToken;
-  }
-
-  if (!authenticationPromise) {
-    authenticationPromise = requestAnonymousOrderCloudTokenWithRetry()
-      .then(({ accessToken, expiresIn }) => writeStoredOrderCloudToken(accessToken, expiresIn))
-      .finally(() => {
-        authenticationPromise = null;
-      });
-  }
-
-  return authenticationPromise;
-};
-
-const asError = (error: unknown): Error =>
-  error instanceof Error ? error : new Error('Unable to start an OrderCloud session');
-
+/**
+ * Starter commerce services on top of the SDK `CommerceProvider` session, so products, cart and
+ * checkout all run as the same shopper. Must be rendered inside `CommerceProvider`.
+ */
 export function OrderCloudProvider({ children }: { children: React.ReactNode }) {
-  configureOrderCloudSdk();
-  const [status, setStatus] = useState<OrderCloudAuthStatus>('loading');
-  const [error, setError] = useState<Error | null>(null);
-  const [storedToken, setStoredToken] = useState<StoredOrderCloudToken | null>(null);
-  const tokenRef = useRef<StoredOrderCloudToken | null>(null);
+  const { service, status: sdkStatus, error, ensureSession, resetSession } = useCommerce();
 
-  const setAuthenticated = useCallback((token: StoredOrderCloudToken) => {
-    tokenRef.current = token;
-    setStoredToken(token);
-    setError(null);
-    setStatus('authenticated');
-  }, []);
+  useEffect(clearLegacyTokenCookies, []);
 
-  const setAuthenticationError = useCallback((authenticationError: unknown) => {
-    const normalizedError = asError(authenticationError);
-    tokenRef.current = null;
-    setStoredToken(null);
-    clearStoredOrderCloudToken();
-    setError(normalizedError);
-    setStatus('error');
-    return normalizedError;
-  }, []);
-
+  // Cart and listing components wait for a session, so start one on mount like the starter always has.
   useEffect(() => {
-    let active = true;
+    if (sdkStatus === 'idle') ensureSession().catch(() => undefined);
+  }, [sdkStatus, ensureSession]);
 
-    void authenticateAnonymous()
-      .then((token) => {
-        if (active) setAuthenticated(token);
-      })
-      .catch((authenticationError) => {
-        if (active) setAuthenticationError(authenticationError);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [setAuthenticated, setAuthenticationError]);
-
-  const startFreshAnonymousSession = useCallback(async () => {
-    clearStoredOrderCloudToken();
-    tokenRef.current = null;
-    const token = await authenticateAnonymous(true);
-    setAuthenticated(token);
-  }, [setAuthenticated]);
-
-  const request = useCallback<CommerceRequest>(
-    async <T,>(operation: (options: CommerceRequestOptions) => Promise<T>): Promise<T> => {
-      let token = tokenRef.current ?? (await authenticateAnonymous());
-      tokenRef.current = token;
-
-      try {
-        return await runOrderCloudOperation(operation, { accessToken: token.accessToken });
-      } catch (requestError) {
-        if (!hasOrderCloudStatus(requestError, 401)) {
-          throw requestError;
-        }
-
-        clearStoredOrderCloudToken();
-        tokenRef.current = null;
-        try {
-          token = await authenticateAnonymous(true);
-          setAuthenticated(token);
-        } catch (authenticationError) {
-          throw setAuthenticationError(authenticationError);
-        }
-
-        try {
-          return await runOrderCloudOperation(operation, { accessToken: token.accessToken });
-        } catch (retryError) {
-          if (hasOrderCloudStatus(retryError, 401)) {
-            throw setAuthenticationError(retryError);
-          }
-          throw retryError;
-        }
-      }
-    },
-    [setAuthenticated, setAuthenticationError]
+  const services = useMemo(
+    () =>
+      service
+        ? createOrderCloudServices(service)
+        : createUnavailableServices(error ?? new Error('Commerce is not configured.')),
+    [service, error]
   );
-  const services = useMemo(() => createOrderCloudServices(request), [request]);
 
-  return (
-    <OrderCloudContext.Provider
-      value={{
-        status,
-        isAuthenticated: status === 'authenticated',
-        accessToken: storedToken?.accessToken ?? null,
-        error,
-        startFreshAnonymousSession,
-        ...services,
-      }}
-    >
-      {children}
-    </OrderCloudContext.Provider>
+  const status: OrderCloudAuthStatus =
+    sdkStatus === 'ready' ? 'authenticated' : sdkStatus === 'error' ? 'error' : 'loading';
+
+  const value = useMemo<OrderCloudContextValue>(
+    () => ({
+      ...services,
+      status,
+      isAuthenticated: status === 'authenticated',
+      error,
+      ensureSession,
+      resetSession: async () => {
+        await resetSession();
+      },
+    }),
+    [services, status, error, ensureSession, resetSession]
   );
+
+  return <OrderCloudContext.Provider value={value}>{children}</OrderCloudContext.Provider>;
 }
 
 export const useOrderCloud = (): OrderCloudContextValue => {

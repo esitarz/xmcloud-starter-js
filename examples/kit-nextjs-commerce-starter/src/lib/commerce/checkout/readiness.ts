@@ -66,7 +66,7 @@ export const getCheckoutReadiness = (): CheckoutReadinessReport => {
   }
   if (!checks.orderCloudBuyerClientId) {
     notes.push(
-      "Shopper auth needs NEXT_PUBLIC_ORDERCLOUD_CLIENT_ID.",
+      "Set NEXT_PUBLIC_ORDERCLOUD_CLIENT_ID to the buyer API client of the Edge oc-shopping resource so the Stripe vault entry can be matched.",
     );
   }
 

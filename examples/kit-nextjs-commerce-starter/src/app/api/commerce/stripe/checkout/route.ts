@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readBearerToken } from "@/lib/commerce/auth/bearer-token";
 import { JwtVerificationError, verifyOrderCloudJwt } from "@/lib/commerce/auth/verify-jwt";
-import { getCart, markCartCheckoutPending } from "@/lib/commerce/cart/service";
+import { getCart, markCartCheckoutPending } from "@/lib/commerce/cart/server";
 import { createHostedCheckoutSession } from "@/lib/commerce/checkout/session";
 import { getStripeCredentialsForClientId } from "@/lib/commerce/checkout/vault";
 

@@ -4,20 +4,25 @@ import { useEffect, useState, type FormEvent } from "react";
 import type React from "react";
 import Link from "next/link";
 import type { ComponentProps } from "@/lib/component-props";
-import { useOrderCloud } from "@/contexts/OrderCloudContext";
-import { hasOrderCloudStatus } from "@/lib/commerce/client";
-import { useProductContext } from "@/contexts/ProductDataContext";
-import { getCartDestinationFromRoute } from "@/lib/commerce/cart/destination";
 import {
-  toLineItemSpecs,
-  validateSpecSelections,
-} from "@/lib/commerce/products/specs";
+  useProductOptions,
+  useProductSelection,
+} from "@sitecore-content-sdk/nextjs/commerce";
+import { useOrderCloud } from "@/contexts/OrderCloudContext";
+import { hasCommerceStatus } from "@/lib/commerce/errors";
+import {
+  getProductStatusMessage,
+  useStarterProduct,
+} from "@/hooks/useStarterProduct";
+import { getCartDestinationFromRoute } from "@/lib/commerce/cart/destination";
 
 type SubmissionStatus = "idle" | "adding" | "added" | "error";
 
 export const Default: React.FC<ComponentProps> = ({ params, page }) => {
-  const productData = useProductContext();
-  const { cart, startFreshAnonymousSession } = useOrderCloud();
+  const productData = useStarterProduct();
+  const productOptions = useProductOptions({ optional: true });
+  const selection = useProductSelection({ optional: true });
+  const { cart, resetSession } = useOrderCloud();
   const isAuthoring = page.mode.isEditing || page.mode.isDesignLibrary;
   const cartHref = getCartDestinationFromRoute(
     page.layout?.sitecore?.route,
@@ -41,54 +46,53 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
   useEffect(() => {
     setSubmissionStatus("idle");
     setSubmissionMessage(null);
-  }, [productData?.selections]);
+  }, [selection?.selections]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!productData || !productId || productData.specsStatus !== "ready") {
+    if (
+      !selection ||
+      !productId ||
+      productOptions?.status !== "success"
+    ) {
       return;
     }
 
-    const nextSpecErrors = validateSpecSelections(
-      productData.specs,
-      productData.selections,
-    );
+    const isComplete = selection.validate();
     const normalizedQuantity = Number(quantity);
     const hasValidQuantity =
       Number.isInteger(normalizedQuantity) && normalizedQuantity >= 1;
-    productData.setValidationErrors(nextSpecErrors);
     setQuantityError(
       hasValidQuantity ? null : "Enter a quantity of at least 1.",
     );
-    if (Object.keys(nextSpecErrors).length > 0) {
+    const draft = isComplete ? selection.getLineItemDraft() : null;
+    if (!draft) {
       setSubmissionStatus("error");
-      setSubmissionMessage("Select the required product options.");
-      return;
-    }
-    if (productData.hasVariantSpecs && !productData.selectedVariant) {
-      setSubmissionStatus("error");
-      setSubmissionMessage("This product option combination is unavailable.");
+      setSubmissionMessage(
+        selection.issues.some((issue) => issue.code === "variant-unavailable")
+          ? "This product option combination is unavailable."
+          : "Select the required product options.",
+      );
       return;
     }
     if (!hasValidQuantity) return;
+
+    const addItem = () =>
+      cart.addItem({
+        productId: draft.ProductID,
+        quantity: normalizedQuantity,
+        specs: draft.Specs,
+      });
 
     setSubmissionStatus("adding");
     setSubmissionMessage(null);
     try {
       try {
-        await cart.addItem({
-          productId,
-          quantity: normalizedQuantity,
-          specs: toLineItemSpecs(productData.specs, productData.selections),
-        });
+        await addItem();
       } catch (error) {
-        if (!hasOrderCloudStatus(error, 409)) throw error;
-        await startFreshAnonymousSession();
-        await cart.addItem({
-          productId,
-          quantity: normalizedQuantity,
-          specs: toLineItemSpecs(productData.specs, productData.selections),
-        });
+        if (!hasCommerceStatus(error, 409)) throw error;
+        await resetSession();
+        await addItem();
       }
       setSubmissionStatus("added");
       setSubmissionMessage("Added to cart");
@@ -102,7 +106,7 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     }
   };
 
-  if (!productData) {
+  if (!productData || !selection) {
     return isAuthoring ? (
       <div className="rounded border border-dashed border-amber-500 p-3 text-sm text-amber-700">
         AddToCart must be placed inside a ProductContainer.
@@ -110,10 +114,7 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     ) : null;
   }
 
-  if (
-    productData.status === "loading-session" ||
-    productData.status === "loading-product"
-  ) {
+  if (productData.isLoading) {
     return (
       <div
         className={`space-y-4 ${params.styles ?? ""}`}
@@ -127,14 +128,11 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
     );
   }
 
-  if (productData.status !== "ready" || !productData.product) {
+  if (!productData.isSuccess || !productData.product) {
     if (!isAuthoring) return null;
     const message =
-      productData.status === "configuration-error"
-        ? "Configure Product Source and its corresponding product ID on ProductContainer."
-        : productData.status === "not-found"
-          ? `Product ${productData.productId ?? ""} was not found.`
-          : (productData.error?.message ?? "Unable to load add to cart.");
+      getProductStatusMessage(productData, "Unable to load add to cart.") ??
+      "Unable to load add to cart.";
 
     return (
       <div className="rounded border border-dashed p-3 text-sm text-slate-600">
@@ -175,7 +173,7 @@ export const Default: React.FC<ComponentProps> = ({ params, page }) => {
         <button
           type="submit"
           disabled={
-            !productData.areSpecSelectionsValid || submissionStatus === "adding"
+            !selection.isComplete || submissionStatus === "adding"
           }
           className="min-h-12 flex-1 rounded-md bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >

@@ -1,11 +1,11 @@
 'use client';
 
-import { OrderCloudProvider } from '@/contexts/OrderCloudContext';
+import { StandaloneCommerceProviders } from '@/contexts/StandaloneCommerceProviders';
 
 export default function OrderCloudProductPickerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <OrderCloudProvider>{children}</OrderCloudProvider>;
+  return <StandaloneCommerceProviders authoring>{children}</StandaloneCommerceProviders>;
 }

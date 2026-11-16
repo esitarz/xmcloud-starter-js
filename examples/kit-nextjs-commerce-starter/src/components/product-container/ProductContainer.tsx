@@ -1,7 +1,7 @@
 import type React from "react";
 import { AppPlaceholder } from "@sitecore-content-sdk/nextjs";
 import componentMap from ".sitecore/component-map";
-import { ProductDataProvider } from "@/contexts/ProductDataContext";
+import { ProductContainerProvider } from "@/components/commerce/ProductContainerProvider";
 import {
   normalizeProductSource,
   parseProductReference,
@@ -77,7 +77,7 @@ export const Default: React.FC<ProductContainerProps> = ({
       data-component="ProductContainer"
       data-class-change
     >
-      <ProductDataProvider
+      <ProductContainerProvider
         source={source}
         selectedProduct={selectedProduct}
         previewProduct={previewProduct}
@@ -89,7 +89,7 @@ export const Default: React.FC<ProductContainerProps> = ({
           page={page}
           componentMap={componentMap}
         />
-      </ProductDataProvider>
+      </ProductContainerProvider>
     </section>
   );
 };

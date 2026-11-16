@@ -1,16 +1,18 @@
 "use client";
 
 import { useId } from "react";
+import type {
+  OptionAvailability,
+  SpecSelection,
+  SpecSelections,
+} from "@sitecore-content-sdk/nextjs/commerce";
 import {
   productSpecOptionControls,
   resolveDateConstraint,
   type CommerceProductSpec,
   type CommerceProductSpecOption,
   type ProductSpecOptionControl,
-  type ProductSpecSelection,
-  type ProductSpecSelections,
 } from "@/lib/commerce/products/specs";
-import type { ProductSpecOptionAvailability } from "@/lib/commerce/products/variants";
 
 const selectedClasses = "border-slate-950 bg-slate-950 text-white";
 const unselectedClasses =
@@ -120,14 +122,14 @@ const OptionChoices = ({
   onChange,
 }: {
   spec: CommerceProductSpec;
-  selection: ProductSpecSelection;
+  selection: SpecSelection;
   control: ProductSpecOptionControl;
   controlId: string;
   describedBy?: string;
   currency?: string;
   disabled: boolean;
   optionAvailability?: Record<string, boolean>;
-  onChange: (selection: ProductSpecSelection) => void;
+  onChange: (selection: SpecSelection) => void;
 }) => {
   const selectOption = (optionId?: string) => {
     const option = spec.options.find((item) => item.id === optionId);
@@ -265,11 +267,11 @@ const OpenTextControl = ({
   onChange,
 }: {
   spec: CommerceProductSpec;
-  selection: ProductSpecSelection;
+  selection: SpecSelection;
   controlId: string;
   describedBy?: string;
   disabled: boolean;
-  onChange: (selection: ProductSpecSelection) => void;
+  onChange: (selection: SpecSelection) => void;
 }) => {
   const control = spec.presentation.textControl ?? "text";
   const commonProps = {
@@ -335,13 +337,13 @@ export const ProductSpecFields = ({
   onChange,
 }: {
   specs: CommerceProductSpec[];
-  selections: ProductSpecSelections;
+  selections: SpecSelections;
   errors: Record<string, string>;
   defaultOptionControl: "dropdown" | "buttons";
   currency?: string;
   disabled: boolean;
-  optionAvailability?: ProductSpecOptionAvailability;
-  onChange: (specId: string, selection: ProductSpecSelection) => void;
+  optionAvailability?: OptionAvailability;
+  onChange: (specId: string, selection: SpecSelection) => void;
 }) => {
   const idPrefix = useId();
 

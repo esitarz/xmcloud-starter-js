@@ -15,21 +15,22 @@ const getPrice = (value: unknown): { price?: number; currency?: string } => {
   };
 };
 
+/**
+ * Maps a raw OrderCloud buyer product to the starter's view model, applying the site's `xp`
+ * conventions (`xp.Images`, `xp.Brand`, `xp.Category`, `xp.Price` fallback).
+ * Used as the SDK `ProductProvider` `select` and for product lists. Module-scoped so it stays
+ * referentially stable.
+ */
 export const toCommerceProduct = (
-  value: unknown,
-): CommerceProduct | undefined => {
-  const product = value as OrderCloudBuyerProduct & Record<string, unknown>;
-  const id = asNonEmptyString(product?.ID ?? product?.id);
-  const name = asNonEmptyString(product?.Name ?? product?.name);
-  if (!id || !name) return undefined;
-
+  product: OrderCloudBuyerProduct,
+): CommerceProduct => {
   const xp = asRecord(product.xp);
   const price = getPrice(product.PriceSchedule ?? product.DefaultPriceSchedule);
   const images = getProductImages(xp);
 
   return {
-    id,
-    name,
+    id: product.ID,
+    name: asNonEmptyString(product.Name, { trim: true }) ?? product.ID,
     description: asNonEmptyString(product.Description),
     ...toProductHeroImage(images),
     images,
@@ -40,3 +41,9 @@ export const toCommerceProduct = (
     currency: price.currency,
   };
 };
+
+/** True for list entries that carry a usable product ID. */
+export const hasProductId = (
+  value: unknown,
+): value is OrderCloudBuyerProduct =>
+  !!asNonEmptyString(asRecord(value)?.ID, { trim: true });

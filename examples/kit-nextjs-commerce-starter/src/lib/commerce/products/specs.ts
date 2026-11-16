@@ -1,10 +1,16 @@
 import type {
-  LineItemSpec,
   PriceMarkupType,
   Spec,
   SpecOption,
-} from "ordercloud-javascript-sdk";
+  SpecSelection,
+  SpecSelectionIssue,
+  SpecSelectionIssueCode,
+} from "@sitecore-content-sdk/nextjs/commerce";
 import { asFiniteNumber, asNonEmptyString, asRecord } from "../normalization";
+
+// OrderCloud spec rules (required, open text, variants) live in the SDK option helpers. This module
+// owns the site conventions: presentation and value constraints read from `spec.xp`, and the
+// English messages for SDK and starter issue codes.
 
 export const productSpecOptionControls = [
   "dropdown",
@@ -62,24 +68,32 @@ export type CommerceProductSpecOption = {
   presentation: ProductSpecOptionPresentation;
 };
 
+/** Presentation view of a raw OrderCloud `Spec` used by `ProductSpecFields`. */
 export type CommerceProductSpec = {
   id: string;
   name: string;
   required: boolean;
   allowOpenText: boolean;
   definesVariant: boolean;
-  defaultOptionId?: string;
-  defaultValue?: string;
   options: CommerceProductSpecOption[];
   presentation: ProductSpecPresentation;
   validation: ProductSpecValidation;
 };
 
-export type ProductSpecSelection = {
-  optionId?: string;
-  value?: string;
-};
-export type ProductSpecSelections = Record<string, ProductSpecSelection>;
+/** Value-constraint issue codes added by the starter's `validateSpec` (from `spec.xp.validation`). */
+export type ProductSpecValueIssueCode =
+  | "min-length"
+  | "max-length"
+  | "invalid-number"
+  | "min"
+  | "max"
+  | "step"
+  | "min-date"
+  | "max-date";
+
+export type ProductSpecIssueCode =
+  | SpecSelectionIssueCode
+  | ProductSpecValueIssueCode;
 
 const oneOf = <T extends string>(
   value: unknown,
@@ -114,8 +128,9 @@ const safeDateConstraint = (value: unknown): string | undefined => {
     : undefined;
 };
 
-const toSpecPresentation = (value: unknown): ProductSpecPresentation => {
-  const presentation = asRecord(asRecord(value)?.presentation);
+/** Reads `spec.xp.presentation`. */
+export const getSpecPresentation = (spec: Spec): ProductSpecPresentation => {
+  const presentation = asRecord(asRecord(spec?.xp)?.presentation);
   return {
     control: oneOf(presentation?.control, productSpecOptionControls),
     textControl: oneOf(presentation?.textControl, productSpecTextControls),
@@ -127,8 +142,9 @@ const toSpecPresentation = (value: unknown): ProductSpecPresentation => {
   };
 };
 
-const toSpecValidation = (value: unknown): ProductSpecValidation => {
-  const validation = asRecord(asRecord(value)?.validation);
+/** Reads `spec.xp.validation`. */
+export const getSpecValidation = (spec: Spec): ProductSpecValidation => {
+  const validation = asRecord(asRecord(spec?.xp)?.validation);
   return {
     min: asFiniteNumber(validation?.min, { allowNumericString: true }),
     max: asFiniteNumber(validation?.max, { allowNumericString: true }),
@@ -141,9 +157,9 @@ const toSpecValidation = (value: unknown): ProductSpecValidation => {
 };
 
 const toOptionPresentation = (
-  value: unknown,
+  option: SpecOption,
 ): ProductSpecOptionPresentation => {
-  const presentation = asRecord(asRecord(value)?.presentation);
+  const presentation = asRecord(asRecord(option?.xp)?.presentation);
   return {
     label: asNonEmptyString(presentation?.label, { trim: true }),
     description: asNonEmptyString(presentation?.description, { trim: true }),
@@ -154,9 +170,8 @@ const toOptionPresentation = (
 };
 
 const toSpecOption = (
-  value: unknown,
+  option: SpecOption,
 ): CommerceProductSpecOption | undefined => {
-  const option = value as SpecOption;
   const id = asNonEmptyString(option?.ID, { trim: true });
   const name = asNonEmptyString(option?.Value, { trim: true });
   if (!id || !name) return undefined;
@@ -172,14 +187,14 @@ const toSpecOption = (
       "Percentage",
     ] satisfies readonly PriceMarkupType[]),
     priceMarkup: asFiniteNumber(option?.PriceMarkup),
-    presentation: toOptionPresentation(option?.xp),
+    presentation: toOptionPresentation(option),
   };
 };
 
+/** Builds the presentation view of a raw spec; undefined when it has no usable ID or name. */
 export const toCommerceProductSpec = (
-  value: unknown,
+  spec: Spec,
 ): CommerceProductSpec | undefined => {
-  const spec = value as Spec;
   const id = asNonEmptyString(spec?.ID, { trim: true });
   const name = asNonEmptyString(spec?.Name, { trim: true });
   if (!id || !name) return undefined;
@@ -197,27 +212,11 @@ export const toCommerceProductSpec = (
     required: spec?.Required === true,
     allowOpenText: spec?.AllowOpenText === true,
     definesVariant: spec?.DefinesVariant === true,
-    defaultOptionId: asNonEmptyString(spec?.DefaultOptionID, { trim: true }),
-    defaultValue: asNonEmptyString(spec?.DefaultValue, { trim: true }),
     options,
-    presentation: toSpecPresentation(spec?.xp),
-    validation: toSpecValidation(spec?.xp),
+    presentation: getSpecPresentation(spec),
+    validation: getSpecValidation(spec),
   };
 };
-
-export const getInitialSpecSelections = (
-  specs: CommerceProductSpec[],
-): ProductSpecSelections =>
-  Object.fromEntries(
-    specs.map((spec) => {
-      const defaultOptionId = spec.options.some(
-        (option) => option.id === spec.defaultOptionId,
-      )
-        ? spec.defaultOptionId
-        : undefined;
-      return [spec.id, { optionId: defaultOptionId, value: spec.defaultValue }];
-    }),
-  );
 
 export const resolveDateConstraint = (value?: string): string | undefined => {
   if (value !== "today") return value;
@@ -226,26 +225,29 @@ export const resolveDateConstraint = (value?: string): string | undefined => {
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 };
 
-const getValueValidationError = (
-  spec: CommerceProductSpec,
+const getValueIssue = (
+  spec: Spec,
   value: string,
-): string | undefined => {
-  const label = spec.presentation.label ?? spec.name;
-  const { validation } = spec;
-  const textControl = spec.presentation.textControl ?? "text";
+): SpecSelectionIssue<ProductSpecValueIssueCode> | undefined => {
+  const validation = getSpecValidation(spec);
+  const textControl = getSpecPresentation(spec).textControl ?? "text";
+  const issue = (
+    code: ProductSpecValueIssueCode,
+    params?: Record<string, string | number>,
+  ) => ({ specId: spec.ID, code, ...(params ? { params } : {}) });
 
   if (validation.minLength !== undefined && value.length < validation.minLength)
-    return `${label} must be at least ${validation.minLength} characters.`;
+    return issue("min-length", { min: validation.minLength });
   if (validation.maxLength !== undefined && value.length > validation.maxLength)
-    return `${label} must be at most ${validation.maxLength} characters.`;
+    return issue("max-length", { max: validation.maxLength });
 
   if (textControl === "number") {
     const number = Number(value);
-    if (!Number.isFinite(number)) return `Enter a valid ${label}.`;
+    if (!Number.isFinite(number)) return issue("invalid-number");
     if (validation.min !== undefined && number < validation.min)
-      return `${label} must be at least ${validation.min}.`;
+      return issue("min", { min: validation.min });
     if (validation.max !== undefined && number > validation.max)
-      return `${label} must be at most ${validation.max}.`;
+      return issue("max", { max: validation.max });
     if (validation.step !== undefined && validation.step > 0) {
       const stepBase = validation.min ?? 0;
       const remainder = Math.abs((number - stepBase) % validation.step);
@@ -253,66 +255,94 @@ const getValueValidationError = (
         remainder > Number.EPSILON * 10 &&
         Math.abs(remainder - validation.step) > Number.EPSILON * 10
       )
-        return `${label} must use increments of ${validation.step}.`;
+        return issue("step", { step: validation.step });
     }
   }
 
   if (textControl === "date") {
     const minDate = resolveDateConstraint(validation.minDate);
     const maxDate = resolveDateConstraint(validation.maxDate);
-    if (minDate && value < minDate)
-      return `${label} must be on or after ${minDate}.`;
-    if (maxDate && value > maxDate)
-      return `${label} must be on or before ${maxDate}.`;
+    if (minDate && value < minDate) return issue("min-date", { date: minDate });
+    if (maxDate && value > maxDate) return issue("max-date", { date: maxDate });
   }
 
   return undefined;
 };
 
-export const validateSpecSelections = (
-  specs: CommerceProductSpec[],
-  selections: ProductSpecSelections,
-): Record<string, string> => {
-  const errors: Record<string, string> = {};
+/**
+ * `validateSpec` for the SDK `ProductProvider`: applies `spec.xp.validation` to open-text values.
+ * The SDK runs it only for specs that already pass OrderCloud rules. Module-scoped so it stays
+ * referentially stable.
+ */
+export const validateSpecValue = (
+  spec: Spec,
+  selection: SpecSelection,
+): SpecSelectionIssue<ProductSpecValueIssueCode> | undefined => {
+  const options = Array.isArray(spec?.Options) ? spec.Options : [];
+  const selectedOption = options.find(
+    (option) => option.ID === selection.optionId,
+  );
+  const acceptsValue =
+    (options.length === 0 && spec?.AllowOpenText === true) ||
+    selectedOption?.IsOpenText === true;
+  const value = selection.value?.trim();
 
-  for (const spec of specs) {
-    const selection = selections[spec.id] ?? {};
-    const selectedOption = spec.options.find(
-      (option) => option.id === selection.optionId,
-    );
-    const requiresValue =
-      (spec.options.length === 0 && spec.allowOpenText) ||
-      selectedOption?.isOpenText === true;
-    const label = spec.presentation.label ?? spec.name;
-    const value = selection.value?.trim();
-
-    if (spec.required && spec.options.length === 0 && !spec.allowOpenText) {
-      errors[spec.id] = `${label} is unavailable.`;
-    } else if (spec.required && spec.options.length > 0 && !selectedOption) {
-      errors[spec.id] = `Select ${label}.`;
-    } else if (
-      (spec.required && requiresValue && !value) ||
-      (selectedOption?.isOpenText && !value)
-    ) {
-      errors[spec.id] = `Enter ${label}.`;
-    } else if (requiresValue && value) {
-      const validationError = getValueValidationError(spec, value);
-      if (validationError) errors[spec.id] = validationError;
-    }
-  }
-
-  return errors;
+  return acceptsValue && value ? getValueIssue(spec, value) : undefined;
 };
 
-export const toLineItemSpecs = (
-  specs: CommerceProductSpec[],
-  selections: ProductSpecSelections,
-): LineItemSpec[] =>
-  specs.flatMap((spec) => {
-    const selection = selections[spec.id] ?? {};
-    const optionId = asNonEmptyString(selection.optionId, { trim: true });
-    const value = asNonEmptyString(selection.value, { trim: true });
-    if (!optionId && !value) return [];
+/** English messages keyed by issue code (the starter's dictionary for spec validation). */
+export const getSpecIssueMessage = (
+  issue: SpecSelectionIssue<string>,
+  spec?: Spec,
+): string => {
+  const label = (spec && getSpecPresentation(spec).label) ?? spec?.Name ?? "";
+  const params = issue.params ?? {};
+  const hasOptions = Array.isArray(spec?.Options) && spec.Options.length > 0;
 
-    return [{ SpecID: spec.id, OptionID: optionId, Value: value }];
-  });
+  switch (issue.code as ProductSpecIssueCode) {
+    case "required":
+      return hasOptions ? `Select ${label}.` : `Enter ${label}.`;
+    case "value-required":
+      return `Enter ${label}.`;
+    case "invalid-option":
+      return `Select a valid ${label}.`;
+    case "open-text-not-allowed":
+      return `${label} does not accept custom text.`;
+    case "spec-unavailable":
+      return `${label} is unavailable.`;
+    case "variant-unavailable":
+      return "This product option combination is unavailable.";
+    case "min-length":
+      return `${label} must be at least ${params.min} characters.`;
+    case "max-length":
+      return `${label} must be at most ${params.max} characters.`;
+    case "invalid-number":
+      return `Enter a valid ${label}.`;
+    case "min":
+      return `${label} must be at least ${params.min}.`;
+    case "max":
+      return `${label} must be at most ${params.max}.`;
+    case "step":
+      return `${label} must use increments of ${params.step}.`;
+    case "min-date":
+      return `${label} must be on or after ${params.date}.`;
+    case "max-date":
+      return `${label} must be on or before ${params.date}.`;
+    default:
+      return label ? `Check ${label}.` : "Check the selected options.";
+  }
+};
+
+/** Messages for spec-level issues, keyed by spec ID (first issue per spec). */
+export const getSpecIssueMessages = (
+  issues: SpecSelectionIssue<string>[],
+  specs: Spec[],
+): Record<string, string> => {
+  const messages: Record<string, string> = {};
+  for (const issue of issues) {
+    if (!issue.specId || messages[issue.specId]) continue;
+    const spec = specs.find((candidate) => candidate.ID === issue.specId);
+    messages[issue.specId] = getSpecIssueMessage(issue, spec);
+  }
+  return messages;
+};

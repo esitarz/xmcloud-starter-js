@@ -1,72 +1,33 @@
 import { describe, expect, it } from 'vitest';
+import type { Spec } from '@sitecore-content-sdk/nextjs/commerce';
 import {
-  getInitialSpecSelections,
+  getSpecIssueMessage,
+  getSpecIssueMessages,
   toCommerceProductSpec,
-  toLineItemSpecs,
-  validateSpecSelections,
-  type CommerceProductSpec,
+  validateSpecValue,
 } from '../lib/commerce/products/specs';
 
-const specs: CommerceProductSpec[] = [
-  {
-    id: 'SIZE',
-    name: 'Size',
-    required: true,
-    allowOpenText: false,
-    definesVariant: true,
-    defaultOptionId: 'MEDIUM',
-    presentation: {},
-    validation: {},
-    options: [
-      { id: 'SMALL', name: 'Small', isOpenText: false, presentation: {} },
-      { id: 'MEDIUM', name: 'Medium', isOpenText: false, presentation: {} },
-    ],
-  },
-  {
-    id: 'ENGRAVING',
-    name: 'Engraving',
-    required: false,
-    allowOpenText: true,
-    definesVariant: false,
-    defaultValue: 'Hello',
-    options: [],
-    presentation: {},
-    validation: {},
-  },
-];
+const sizeSpec: Spec = {
+  ID: 'SIZE',
+  Name: 'Size',
+  Required: true,
+  DefinesVariant: true,
+  Options: [
+    { ID: 'SMALL', Value: 'Small' },
+    { ID: 'OTHER', Value: 'Other', IsOpenText: true },
+  ],
+};
 
-describe('product spec selections', () => {
-  it('initializes product assignment defaults', () => {
-    expect(getInitialSpecSelections(specs)).toEqual({
-      SIZE: { optionId: 'MEDIUM', value: undefined },
-      ENGRAVING: { optionId: undefined, value: 'Hello' },
-    });
-  });
+const messageSpec = (xp: Record<string, unknown>): Spec => ({
+  ID: 'MESSAGE',
+  Name: 'Message',
+  Required: true,
+  AllowOpenText: true,
+  Options: [],
+  xp,
+});
 
-  it('validates required options and selected open-text options', () => {
-    const openTextOptionSpecs: CommerceProductSpec[] = [
-      {
-        ...specs[0],
-        options: [
-          {
-            id: 'OTHER',
-            name: 'Other',
-            isOpenText: true,
-            presentation: {},
-          },
-        ],
-        defaultOptionId: undefined,
-      },
-    ];
-
-    expect(validateSpecSelections(specs, {})).toEqual({ SIZE: 'Select Size.' });
-    expect(
-      validateSpecSelections(openTextOptionSpecs, {
-        SIZE: { optionId: 'OTHER' },
-      }),
-    ).toEqual({ SIZE: 'Enter Size.' });
-  });
-
+describe('product spec presentation', () => {
   it('normalizes supported Spec and Option XP presentation', () => {
     expect(
       toCommerceProductSpec({
@@ -98,6 +59,7 @@ describe('product spec selections', () => {
         ],
       }),
     ).toMatchObject({
+      required: true,
       presentation: {
         control: 'swatches',
         label: 'Finish',
@@ -143,32 +105,107 @@ describe('product spec selections', () => {
     });
   });
 
-  it('validates configured open-text constraints', () => {
-    const configured: CommerceProductSpec[] = [
-      {
-        ...specs[1],
-        required: true,
-        presentation: { label: 'Message', textControl: 'text' },
-        validation: { minLength: 3, maxLength: 8 },
-      },
-    ];
+  it('skips specs without an ID or name', () => {
+    expect(toCommerceProductSpec({ ID: ' ', Name: 'Size' })).toBeUndefined();
+  });
+});
 
-    expect(validateSpecSelections(configured, { ENGRAVING: { value: 'Hi' } })).toEqual({
-      ENGRAVING: 'Message must be at least 3 characters.',
+describe('validateSpecValue (xp constraints)', () => {
+  it('validates configured open-text length constraints', () => {
+    const spec = messageSpec({
+      presentation: { textControl: 'text' },
+      validation: { minLength: 3, maxLength: 8 },
     });
-    expect(validateSpecSelections(configured, { ENGRAVING: { value: 'Welcome' } })).toEqual({});
+
+    expect(validateSpecValue(spec, { value: 'Hi' })).toEqual({
+      specId: 'MESSAGE',
+      code: 'min-length',
+      params: { min: 3 },
+    });
+    expect(validateSpecValue(spec, { value: 'Welcome' })).toBeUndefined();
+    expect(validateSpecValue(spec, { value: 'Welcome back' })).toMatchObject({
+      code: 'max-length',
+    });
   });
 
-  it('builds the selected OrderCloud line-item specs and omits blank optional values', () => {
+  it('validates number constraints', () => {
+    const spec = messageSpec({
+      presentation: { textControl: 'number' },
+      validation: { min: 2, max: 10, step: 2 },
+    });
+
+    expect(validateSpecValue(spec, { value: 'abc' })).toMatchObject({ code: 'invalid-number' });
+    expect(validateSpecValue(spec, { value: '1' })).toMatchObject({ code: 'min' });
+    expect(validateSpecValue(spec, { value: '12' })).toMatchObject({ code: 'max' });
+    expect(validateSpecValue(spec, { value: '5' })).toMatchObject({
+      code: 'step',
+      params: { step: 2 },
+    });
+    expect(validateSpecValue(spec, { value: '6' })).toBeUndefined();
+  });
+
+  it('validates date constraints', () => {
+    const spec = messageSpec({
+      presentation: { textControl: 'date' },
+      validation: { minDate: '2026-01-01', maxDate: '2026-12-31' },
+    });
+
+    expect(validateSpecValue(spec, { value: '2025-12-31' })).toMatchObject({
+      code: 'min-date',
+      params: { date: '2026-01-01' },
+    });
+    expect(validateSpecValue(spec, { value: '2027-01-01' })).toMatchObject({ code: 'max-date' });
+    expect(validateSpecValue(spec, { value: '2026-06-01' })).toBeUndefined();
+  });
+
+  it('only checks values that the spec or selected option accepts', () => {
+    const constrained: Spec = {
+      ...sizeSpec,
+      xp: { validation: { minLength: 5 } },
+    };
+
+    expect(validateSpecValue(constrained, { optionId: 'SMALL' })).toBeUndefined();
+    expect(validateSpecValue(constrained, { optionId: 'OTHER', value: 'abc' })).toMatchObject({
+      code: 'min-length',
+    });
+    expect(validateSpecValue(messageSpec({ validation: { minLength: 3 } }), { value: '  ' })).toBeUndefined();
+  });
+});
+
+describe('spec issue messages', () => {
+  it('maps SDK issue codes to English messages using the presentation label', () => {
+    const labelled: Spec = { ...sizeSpec, xp: { presentation: { label: 'Shoe size' } } };
+
+    expect(getSpecIssueMessage({ specId: 'SIZE', code: 'required' }, labelled)).toBe(
+      'Select Shoe size.',
+    );
+    expect(getSpecIssueMessage({ specId: 'MESSAGE', code: 'required' }, messageSpec({}))).toBe(
+      'Enter Message.',
+    );
+    expect(getSpecIssueMessage({ specId: 'SIZE', code: 'value-required' }, sizeSpec)).toBe(
+      'Enter Size.',
+    );
+    expect(getSpecIssueMessage({ specId: '', code: 'variant-unavailable' })).toBe(
+      'This product option combination is unavailable.',
+    );
     expect(
-      toLineItemSpecs(specs, {
-        SIZE: { optionId: 'SMALL' },
-        ENGRAVING: { value: '  Codex  ' },
-      }),
-    ).toEqual([
-      { SpecID: 'SIZE', OptionID: 'SMALL', Value: undefined },
-      { SpecID: 'ENGRAVING', OptionID: undefined, Value: 'Codex' },
-    ]);
-    expect(toLineItemSpecs(specs, { SIZE: { optionId: 'SMALL' } })).toHaveLength(1);
+      getSpecIssueMessage(
+        { specId: 'MESSAGE', code: 'min-length', params: { min: 3 } },
+        messageSpec({}),
+      ),
+    ).toBe('Message must be at least 3 characters.');
+  });
+
+  it('keys the first message per spec and skips product-level issues', () => {
+    expect(
+      getSpecIssueMessages(
+        [
+          { specId: 'SIZE', code: 'required' },
+          { specId: 'SIZE', code: 'invalid-option' },
+          { specId: '', code: 'variant-unavailable' },
+        ],
+        [sizeSpec],
+      ),
+    ).toEqual({ SIZE: 'Select Size.' });
   });
 });

@@ -1,18 +1,17 @@
-import { Me, type Spec, type Variant } from "ordercloud-javascript-sdk";
-import type { CommerceRequest } from "../client";
-import { toCommerceProduct } from "./mapper";
+import type {
+  ListMeta,
+  ListPage,
+  ProductsApi,
+} from "@sitecore-content-sdk/nextjs/commerce";
+import { hasProductId, toCommerceProduct } from "./mapper";
 import type {
   CommerceProduct,
+  CommerceProductFacet,
   CommerceProductList,
+  CommerceProductXp,
   ListProductsOptions,
-  OrderCloudBuyerProduct,
   ProductRequestOptions,
 } from "./types";
-import { toCommerceProductSpec, type CommerceProductSpec } from "./specs";
-import {
-  toCommerceProductVariant,
-  type CommerceProductVariant,
-} from "./variants";
 
 const asPositiveInteger = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isInteger(value) && value > 0
@@ -24,109 +23,63 @@ const asNonNegativeInteger = (value: unknown): number | undefined =>
     ? value
     : undefined;
 
-const getProperty = (value: unknown, ...names: string[]): unknown => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return undefined;
-  const record = value as Record<string, unknown>;
-  const key = Object.keys(record).find((candidate) =>
-    names.some((name) => candidate.toLowerCase() === name.toLowerCase()),
-  );
-  return key ? record[key] : undefined;
-};
+const trimmed = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
 
-const getListItems = (value: unknown): unknown[] => {
-  const items = getProperty(value, "Items", "items");
-  return Array.isArray(items) ? items : [];
-};
+const toFacets = (meta: ListMeta): CommerceProductFacet[] =>
+  (Array.isArray(meta.Facets) ? meta.Facets : []).flatMap((facet) => {
+    const name = trimmed(facet?.Name);
+    const xpPath = trimmed(facet?.XpPath);
+    if (!name || !xpPath) return [];
 
-const getMeta = (value: unknown): CommerceProductList["meta"] => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return undefined;
-  const meta = value as Record<string, unknown>;
-  const facetsValue = getProperty(meta, "Facets", "facets");
-  const facets = Array.isArray(facetsValue)
-    ? facetsValue.flatMap((facetValue) => {
-        if (
-          !facetValue ||
-          typeof facetValue !== "object" ||
-          Array.isArray(facetValue)
-        ) {
-          return [];
-        }
-        const facet = facetValue as Record<string, unknown>;
-        const nameValue = getProperty(facet, "Name", "name");
-        const name = typeof nameValue === "string" ? nameValue.trim() : "";
-        const xpPathValue = getProperty(facet, "XpPath", "xpPath");
-        const xpPath =
-          typeof xpPathValue === "string" ? xpPathValue.trim() : "";
-        if (!name || !xpPath) return [];
+    const values = (Array.isArray(facet.Values) ? facet.Values : []).flatMap(
+      (item) => {
+        const value = trimmed(item?.Value);
+        const count = asNonNegativeInteger(item?.Count);
+        return value && count !== undefined ? [{ value, count }] : [];
+      },
+    );
+    return [{ name, xpPath, values }];
+  });
 
-        const facetValues = getProperty(facet, "Values", "values");
-        const values = Array.isArray(facetValues)
-          ? facetValues.flatMap((itemValue) => {
-              if (
-                !itemValue ||
-                typeof itemValue !== "object" ||
-                Array.isArray(itemValue)
-              ) {
-                return [];
-              }
-              const item = itemValue as Record<string, unknown>;
-              const itemText = getProperty(item, "Value", "value");
-              const facetItemValue =
-                typeof itemText === "string" ? itemText.trim() : "";
-              const count = asNonNegativeInteger(
-                getProperty(item, "Count", "count"),
-              );
-              return facetItemValue && count !== undefined
-                ? [{ value: facetItemValue, count }]
-                : [];
-            })
-          : [];
+const toMeta = (meta: ListMeta | undefined): CommerceProductList["meta"] =>
+  meta
+    ? {
+        page: asPositiveInteger(meta.Page),
+        pageSize: asPositiveInteger(meta.PageSize),
+        totalCount: asNonNegativeInteger(meta.TotalCount),
+        totalPages: asNonNegativeInteger(meta.TotalPages),
+        facets: toFacets(meta),
+      }
+    : undefined;
 
-        return [{ name, xpPath, values }];
-      })
-    : [];
+const toProducts = (page: ListPage<unknown>): CommerceProduct[] =>
+  (Array.isArray(page?.Items) ? page.Items : [])
+    .filter(hasProductId)
+    .map(toCommerceProduct);
 
-  return {
-    page: asPositiveInteger(getProperty(meta, "Page", "page")),
-    pageSize: asPositiveInteger(getProperty(meta, "PageSize", "pageSize")),
-    totalCount: asNonNegativeInteger(
-      getProperty(meta, "TotalCount", "totalCount"),
-    ),
-    totalPages: asNonNegativeInteger(
-      getProperty(meta, "TotalPages", "totalPages"),
-    ),
-    facets,
-  };
-};
-
+/**
+ * Product list reads for listing components and the product picker, on the SDK shopper session.
+ * Single-product reads (product, specs, variants) go through the SDK `ProductProvider`.
+ */
 export class ProductsService {
-  constructor(private readonly request: CommerceRequest) {}
+  constructor(private readonly api: Pick<ProductsApi, "list">) {}
 
   async list(options: ListProductsOptions = {}): Promise<CommerceProductList> {
-    const response = await this.request((requestOptions) => {
-      const optionsWithSignal = { ...requestOptions, signal: options.signal };
-      return Me.ListProducts<OrderCloudBuyerProduct>(
-        {
-          catalogID: options.catalogId?.trim() || undefined,
-          categoryID: options.categoryId?.trim() || undefined,
-          search: options.search?.trim() || undefined,
-          sortBy: options.sortBy,
-          page: options.page,
-          pageSize: options.pageSize,
-          filters: options.filters,
-        },
-        optionsWithSignal,
-      );
-    });
+    const response = await this.api.list<CommerceProductXp>(
+      {
+        catalogID: options.catalogId?.trim() || undefined,
+        categoryID: options.categoryId?.trim() || undefined,
+        search: options.search?.trim() || undefined,
+        sortBy: options.sortBy,
+        page: options.page,
+        pageSize: options.pageSize,
+        filters: options.filters,
+      },
+      { signal: options.signal },
+    );
 
-    return {
-      items: getListItems(response)
-        .map(toCommerceProduct)
-        .filter((product): product is CommerceProduct => !!product),
-      meta: getMeta(getProperty(response, "Meta", "meta")),
-    };
+    return { items: toProducts(response), meta: toMeta(response?.Meta) };
   }
 
   async listByIds(
@@ -142,121 +95,24 @@ export class ProductsService {
     ];
 
     if (uniqueIds.length === 0) {
-      return {
-        items: [],
-        meta: { totalCount: 0 },
-      };
+      return { items: [], meta: { totalCount: 0 } };
     }
 
-    const response = await this.request((requestOptions) => {
-      const optionsWithSignal = { ...requestOptions, signal: options.signal };
-      return Me.ListProducts<OrderCloudBuyerProduct>(
-        {
-          pageSize: uniqueIds.length,
-          filters: { ID: uniqueIds.join("|") },
-        },
-        optionsWithSignal,
-      );
-    });
+    const response = await this.api.list<CommerceProductXp>(
+      { pageSize: uniqueIds.length, filters: { ID: uniqueIds } },
+      { signal: options.signal },
+    );
     const productsById = new Map(
-      getListItems(response)
-        .map(toCommerceProduct)
-        .filter((product): product is CommerceProduct => !!product)
-        .map((product): [string, CommerceProduct] => [product.id, product]),
+      toProducts(response).map((product): [string, CommerceProduct] => [
+        product.id,
+        product,
+      ]),
     );
     const items = uniqueIds.flatMap((productId) => {
       const product = productsById.get(productId);
       return product ? [product] : [];
     });
 
-    return {
-      items,
-      meta: { totalCount: items.length },
-    };
-  }
-
-  async get(
-    productId: string,
-    options: ProductRequestOptions = {},
-  ): Promise<CommerceProduct> {
-    const normalizedId = productId.trim();
-    if (!normalizedId) throw new Error("OrderCloud product ID is required");
-
-    const response = await this.request((requestOptions) => {
-      const optionsWithSignal = { ...requestOptions, signal: options.signal };
-      return Me.GetProduct<OrderCloudBuyerProduct>(
-        normalizedId,
-        undefined,
-        optionsWithSignal,
-      );
-    });
-    const product = toCommerceProduct(response);
-    if (!product)
-      throw new Error("OrderCloud returned an invalid product response");
-    return product;
-  }
-
-  async listSpecs(
-    productId: string,
-    options: ProductRequestOptions = {},
-  ): Promise<CommerceProductSpec[]> {
-    const normalizedId = productId.trim();
-    if (!normalizedId) throw new Error("OrderCloud product ID is required");
-
-    const response = await this.request((requestOptions) => {
-      const optionsWithSignal = { ...requestOptions, signal: options.signal };
-      return Me.ListSpecs<Spec>(
-        normalizedId,
-        { pageSize: 100 },
-        optionsWithSignal,
-      );
-    });
-
-    return Array.isArray(response.Items)
-      ? response.Items.flatMap((value) => {
-          const spec = toCommerceProductSpec(value);
-          return spec ? [spec] : [];
-        })
-      : [];
-  }
-
-  async listVariants(
-    productId: string,
-    options: ProductRequestOptions = {},
-  ): Promise<CommerceProductVariant[]> {
-    const normalizedId = productId.trim();
-    if (!normalizedId) throw new Error("OrderCloud product ID is required");
-
-    const variants: CommerceProductVariant[] = [];
-    const pageSize = 100;
-    let page = 1;
-
-    while (true) {
-      const response = await this.request((requestOptions) => {
-        const optionsWithSignal = { ...requestOptions, signal: options.signal };
-        return Me.ListVariants<Variant>(
-          normalizedId,
-          { page, pageSize, filters: { Active: true } },
-          optionsWithSignal,
-        );
-      });
-      const pageItems = Array.isArray(response.Items) ? response.Items : [];
-      variants.push(
-        ...pageItems.flatMap((value) => {
-          const variant = toCommerceProductVariant(value);
-          return variant?.active ? [variant] : [];
-        }),
-      );
-
-      const totalPages = asNonNegativeInteger(response.Meta?.TotalPages);
-      if (
-        pageItems.length < pageSize ||
-        (totalPages !== undefined && page >= totalPages)
-      )
-        break;
-      page += 1;
-    }
-
-    return variants;
+    return { items, meta: { totalCount: items.length } };
   }
 }

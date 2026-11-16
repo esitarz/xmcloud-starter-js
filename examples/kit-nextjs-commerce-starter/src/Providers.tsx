@@ -8,6 +8,7 @@ import {
 } from "@sitecore-content-sdk/nextjs";
 import scConfig from "sitecore.config";
 import components from ".sitecore/component-map.client";
+import { CommerceProvider } from "@sitecore-content-sdk/nextjs/commerce";
 import { OrderCloudProvider } from "./contexts/OrderCloudContext";
 import { RoutePathProvider } from "./contexts/RoutePathContext";
 
@@ -30,11 +31,14 @@ export default function Providers({
       loadImportMap={() => import(".sitecore/import-map.client")}
     >
       <RoutePathProvider routePath={routePath}>
-        <OrderCloudProvider>
-          <ComponentPropsContext value={componentProps}>
-            {children}
-          </ComponentPropsContext>
-        </OrderCloudProvider>
+        {/* Route-handler tokens via app/api/commerce/token; in-memory in editing/preview */}
+        <CommerceProvider>
+          <OrderCloudProvider>
+            <ComponentPropsContext value={componentProps}>
+              {children}
+            </ComponentPropsContext>
+          </OrderCloudProvider>
+        </CommerceProvider>
       </RoutePathProvider>
     </SitecoreProvider>
   );

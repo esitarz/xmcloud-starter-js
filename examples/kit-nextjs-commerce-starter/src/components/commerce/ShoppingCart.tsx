@@ -12,7 +12,7 @@ import { buildProductDetailHref } from '@/lib/commerce/products/href';
 import { CATALOG_LIST_HREF } from '@/lib/commerce/products/list-source';
 
 export default function ShoppingCart() {
-  const { accessToken, cart, status, error: sessionError } = useOrderCloud();
+  const { ensureSession, cart, status, error: sessionError } = useOrderCloud();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<CommerceCart | null>(null);
@@ -58,11 +58,12 @@ export default function ShoppingCart() {
     setCheckoutError(null);
 
     try {
-      if (!accessToken) {
+      const session = await ensureSession().catch(() => null);
+      if (!session?.accessToken) {
         throw new Error('Unable to start checkout without a shopper session.');
       }
 
-      const result = await startHostedCheckout(accessToken);
+      const result = await startHostedCheckout(session.accessToken);
       if (result.orderId) {
         sessionStorage.setItem(CHECKOUT_ORDER_ID_STORAGE_KEY, result.orderId);
       }

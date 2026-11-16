@@ -1,4 +1,7 @@
-import type { BuyerProduct, PriceSchedule } from "ordercloud-javascript-sdk";
+import type {
+  BuyerProduct,
+  PriceSchedule,
+} from "@sitecore-content-sdk/nextjs/commerce";
 
 export type CommerceProduct = {
   id: string;
@@ -19,7 +22,8 @@ export type CommerceProductImage = {
   alt?: string;
 };
 
-type CommerceProductXp = {
+/** Site `xp` conventions read by `toCommerceProduct`. */
+export type CommerceProductXp = {
   Images?: unknown;
   Brand?: unknown;
   Category?: unknown;
@@ -27,7 +31,7 @@ type CommerceProductXp = {
 };
 
 export type OrderCloudBuyerProduct = BuyerProduct<CommerceProductXp> & {
-  DefaultPriceSchedule?: PriceSchedule;
+  DefaultPriceSchedule?: PriceSchedule | null;
 };
 
 export type CommerceProductList = {
