@@ -68,6 +68,8 @@ export const Default: React.FC<ProductContainerProps> = ({
     ),
   );
   const placeholderName = `product-container-${params.DynamicPlaceholderId ?? "0"}`;
+  const isPreview =
+    page.mode.isEditing || page.mode.isPreview || page.mode.isDesignLibrary;
   const isAuthoring = page.mode.isEditing || page.mode.isDesignLibrary;
   const authoringFieldName =
     source === "ordercloud-picker"
@@ -108,7 +110,8 @@ export const Default: React.FC<ProductContainerProps> = ({
         source={source}
         selectedProduct={selectedProduct}
         previewProduct={previewProduct}
-        isAuthoring={isAuthoring}
+        isAuthoring={isPreview}
+        showAuthoringField={isAuthoring}
         authoringField={authoringField}
       >
         <AppPlaceholder

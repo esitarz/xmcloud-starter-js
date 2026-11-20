@@ -16,6 +16,7 @@ type ProductContainerContentProps = {
   isAuthoring: boolean;
   previewProduct?: ProductReference;
   selectedProduct?: ProductReference;
+  showAuthoringField?: boolean;
   source?: ProductSource;
 };
 
@@ -25,6 +26,7 @@ export default function ProductContainerContent({
   isAuthoring,
   previewProduct: initialPreviewProduct,
   selectedProduct: initialSelectedProduct,
+  showAuthoringField = isAuthoring,
   source,
 }: ProductContainerContentProps) {
   const [selectedProduct, setSelectedProduct] = useState(
@@ -48,7 +50,7 @@ export default function ProductContainerContent({
       previewProduct={previewProduct}
       isAuthoring={isAuthoring}
     >
-      {isAuthoring && authoringField && (
+      {showAuthoringField && authoringField && (
         <AuthoringProductField {...authoringField} onSaved={updateProduct} />
       )}
       {children}
