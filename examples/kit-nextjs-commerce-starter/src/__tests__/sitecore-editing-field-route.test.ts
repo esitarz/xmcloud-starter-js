@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { POST } from "../app/api/editing/field/route";
+import { isAllowedEditingField, POST } from "../app/api/editing/field/route";
 
 const originalSecret = process.env.SITECORE_EDITING_SECRET;
 
@@ -30,5 +30,9 @@ describe("Sitecore editing field route", () => {
     process.env.SITECORE_EDITING_SECRET = "editing-secret";
 
     expect((await POST(request("editing-secret"))).status).toBe(400);
+  });
+
+  it("recognizes Product Preview ID as a page-owned authoring field", async () => {
+    expect(isAllowedEditingField("Product Preview ID")).toBe(true);
   });
 });

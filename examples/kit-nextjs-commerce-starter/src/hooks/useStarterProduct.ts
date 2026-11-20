@@ -25,7 +25,7 @@ export const getProductStatusMessage = (
   fallback: string,
 ): string | undefined => {
   if (product.status === "idle" && !product.productId)
-    return "Configure Product Source and its corresponding product ID on ProductContainer.";
+    return "Configure Product ID, Product Preview ID, or Use Route Path on the page.";
   if (product.status === "not-found")
     return `Product ${product.productId ?? ""} was not found.`;
   if (product.status === "error") return product.error?.message ?? fallback;

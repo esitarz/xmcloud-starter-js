@@ -12,9 +12,13 @@ type UpdateFieldRequest = {
 
 const ALLOWED_FIELDS = new Set([
   "Product ID",
+  "Product Preview ID",
   "Preview Product ID",
   "Products",
 ]);
+
+export const isAllowedEditingField = (fieldName: string): boolean =>
+  ALLOWED_FIELDS.has(fieldName);
 
 const errorResponse = (message: string, status: number) =>
   Response.json({ error: message }, { status });
@@ -49,7 +53,7 @@ export async function POST(request: Request) {
     !body.dataSource.trim() ||
     body.dataSource.length > 500 ||
     typeof body.fieldName !== "string" ||
-    !ALLOWED_FIELDS.has(body.fieldName) ||
+    !isAllowedEditingField(body.fieldName) ||
     typeof body.language !== "string" ||
     !/^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(body.language) ||
     typeof body.value !== "string"

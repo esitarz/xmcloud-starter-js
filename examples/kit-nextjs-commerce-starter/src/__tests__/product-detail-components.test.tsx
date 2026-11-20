@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import ProductContainerContent from "../components/commerce/ProductContainerContent";
+import {
+  hasProductContainerContent,
+  resolveProductContainerSettings,
+} from "../lib/commerce/products/container-settings";
+import { ProductDetailFallback } from "../lib/commerce/products/ProductDetailFallback";
 import { Default as ProductInfo } from "../components/product-info/ProductInfo";
 import { Default as ProductImageGallery } from "../components/product-image-gallery/ProductImageGallery";
 import { Default as SpecForm } from "../components/spec-form/SpecForm";
@@ -131,6 +136,77 @@ beforeEach(() => {
 });
 
 describe("product detail component migration", () => {
+  it("prefers page-owned route fields when the rendering has no datasource", () => {
+    expect(
+      resolveProductContainerSettings({
+        fields: undefined,
+        routeFields: {
+          "Use Route Path": { value: true },
+          "Product ID": { value: "" },
+          "Product Preview ID": { value: "preview-product" },
+        },
+        routeItemId: "route-item-id",
+      }),
+    ).toMatchObject({
+      source: "last-url-segment",
+      selectedProduct: undefined,
+      previewProduct: { id: "preview-product" },
+      dataSource: "route-item-id",
+      fieldName: "Product Preview ID",
+    });
+  });
+
+  it("supports a page-owned Product ID when route-path use is disabled", () => {
+    expect(
+      resolveProductContainerSettings({
+        fields: undefined,
+        routeFields: {
+          "Use Route Path": { value: false },
+          "Product ID": { value: "selected-product" },
+          "Product Preview ID": { value: "" },
+        },
+        routeItemId: "route-item-id",
+      }),
+    ).toMatchObject({
+      source: "ordercloud-picker",
+      selectedProduct: { id: "selected-product" },
+      dataSource: "route-item-id",
+      fieldName: "Product ID",
+    });
+  });
+
+  it("retains legacy datasource fields and datasource writes", () => {
+    expect(
+      resolveProductContainerSettings({
+        fields: {
+          "Product Source": { value: "Last URL Segment" },
+          "Preview Product ID": { value: "legacy-preview" },
+        },
+        routeFields: {},
+        renderingDataSource: "legacy-datasource",
+      }),
+    ).toMatchObject({
+      source: "last-url-segment",
+      previewProduct: { id: "legacy-preview" },
+      dataSource: "legacy-datasource",
+      fieldName: "Preview Product ID",
+    });
+  });
+
+  it("detects whether ProductContainer has authored child renderings", () => {
+    expect(hasProductContainerContent({})).toBe(false);
+    expect(
+      hasProductContainerContent({
+        "product-container-2": [],
+      }),
+    ).toBe(false);
+    expect(
+      hasProductContainerContent({
+        "product-container-2": [{} as never],
+      }),
+    ).toBe(true);
+  });
+
   it("resolves a concrete route and supplies starter mapping", () => {
     renderToStaticMarkup(
       <ProductContainerContent isAuthoring={false} source="last-url-segment">
@@ -187,6 +263,20 @@ describe("product detail component migration", () => {
     expect(html).toContain("ava-edge.jpg");
     expect(html).toContain("Size");
     expect(html).toContain("8");
+  });
+
+  it("renders a complete product detail fallback", () => {
+    const html = renderToStaticMarkup(
+      <ProductDetailFallback
+        {...componentProps()}
+        params={{ RenderingIdentifier: "product-container" }}
+      />,
+    );
+
+    expect(html).toContain("Ava Edge");
+    expect(html).toContain("ava-edge.jpg");
+    expect(html).toContain("Size");
+    expect(html).toContain("Add to cart");
   });
 
   it("disables add-to-cart in editing and preview modes", () => {
