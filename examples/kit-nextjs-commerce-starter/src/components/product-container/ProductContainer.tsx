@@ -3,11 +3,7 @@ import { AppPlaceholder } from "@sitecore-content-sdk/nextjs";
 import componentMap from ".sitecore/component-map";
 import ProductContainerContent from "@/components/commerce/ProductContainerContent";
 import type { ProductContainerProps } from "./product-container.props";
-import {
-  hasProductContainerContent,
-  resolveProductContainerSettings,
-} from "@/lib/commerce/products/container-settings";
-import { ProductDetailFallback } from "@/lib/commerce/products/ProductDetailFallback";
+import { resolveProductContainerSettings } from "@/lib/commerce/products/container-settings";
 
 export const Default: React.FC<ProductContainerProps> = ({
   fields,
@@ -68,13 +64,6 @@ export const Default: React.FC<ProductContainerProps> = ({
         showAuthoringField={isAuthoring}
         authoringField={authoringField}
       >
-        {!hasProductContainerContent(rendering.placeholders) && (
-          <ProductDetailFallback
-            rendering={rendering}
-            params={params}
-            page={page}
-          />
-        )}
         <AppPlaceholder
           name={placeholderName}
           rendering={rendering}

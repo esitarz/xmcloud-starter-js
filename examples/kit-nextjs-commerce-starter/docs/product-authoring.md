@@ -9,11 +9,24 @@ Both experiences store only stable OrderCloud IDs. Product names, images, prices
 
 ## Field values
 
-- `ProductContainer.Product ID`: one plain OrderCloud product ID.
-- `ProductContainer.Preview Product ID`: one plain OrderCloud product ID.
+- Product page `Use Route Path`: whether the live product ID comes from the URL.
+- Product page `Product ID`: one plain OrderCloud product ID when route-path use is disabled.
+- Product page `Product Preview ID`: one plain OrderCloud product ID for wildcard-page authoring.
+- Legacy ProductContainer datasource `Product ID` and `Preview Product ID`: supported when the page has no product configuration fields.
 - `FeaturedProducts.Products`: one OrderCloud product ID per line, in display order.
 
 Structured JSON values are intentionally unsupported. Existing values must be changed to the formats above.
+
+## Editable product detail composition
+
+The product page owns product configuration. ProductContainer provides shared product state and exposes a Sitecore placeholder; it does not inject a product detail template when the placeholder is empty.
+
+1. In Pages, open the wildcard Product page and select ProductContainer.
+2. Add ProductImageGallery, ProductInfo, SpecForm, and AddToCart inside its placeholder. These must be nested Sitecore renderings, not React-only children.
+3. If Pages does not offer these renderings, verify the Placeholder Settings entry for `product-container-{*}` and its Allowed Controls list. Allow all four renderings and associate the settings with ProductContainer as required by the site's rendering configuration.
+4. Save and verify that Layout Service returns these children under ProductContainer's `placeholders["product-container-2"]` when `DynamicPlaceholderId` is `"2"`. Publish the relevant content and presentation configuration for the live site.
+
+Without authored children, the product detail area remains empty. A missing-placeholder warning indicates incomplete presentation content or configuration; it is not repaired by a runtime fallback. Live Pages acceptance and Layout Service output must be verified against CM.
 
 ## SitecoreAI changes for the comparison
 

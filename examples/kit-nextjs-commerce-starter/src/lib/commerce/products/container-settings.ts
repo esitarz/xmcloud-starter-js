@@ -1,4 +1,3 @@
-import type { ComponentRendering } from "@sitecore-content-sdk/nextjs";
 import {
   normalizeProductSource,
   parseProductReference,
@@ -115,9 +114,3 @@ export const resolveProductContainerSettings = ({
   };
 };
 
-export const hasProductContainerContent = (
-  placeholders: ComponentRendering["placeholders"],
-): boolean =>
-  Object.values(placeholders ?? {}).some(
-    (renderings) => Array.isArray(renderings) && renderings.length > 0,
-  );

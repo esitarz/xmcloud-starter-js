@@ -2,16 +2,35 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import ProductContainerContent from "../components/commerce/ProductContainerContent";
-import {
-  hasProductContainerContent,
-  resolveProductContainerSettings,
-} from "../lib/commerce/products/container-settings";
-import { ProductDetailFallback } from "../lib/commerce/products/ProductDetailFallback";
+import { resolveProductContainerSettings } from "../lib/commerce/products/container-settings";
+import { Default as ProductContainer } from "../components/product-container/ProductContainer";
 import { Default as ProductInfo } from "../components/product-info/ProductInfo";
 import { Default as ProductImageGallery } from "../components/product-image-gallery/ProductImageGallery";
 import { Default as SpecForm } from "../components/spec-form/SpecForm";
 import { Default as AddToCart } from "../components/add-to-cart/AddToCart";
 import type { ComponentProps } from "../lib/component-props";
+
+vi.mock(".sitecore/component-map", () => ({ default: new Map() }));
+
+vi.mock("@sitecore-content-sdk/nextjs", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return {
+    ...original,
+    AppPlaceholder: ({
+      name,
+      rendering,
+    }: {
+      name: string;
+      rendering: ComponentProps["rendering"];
+    }) => (
+      <div data-placeholder={name}>
+        {rendering.placeholders?.[name]?.map((child, index) => (
+          <span key={index}>{"componentName" in child ? child.componentName : ""}</span>
+        ))}
+      </div>
+    ),
+  };
+});
 
 type ProductProviderCapture = {
   productId?: string;
@@ -193,18 +212,52 @@ describe("product detail component migration", () => {
     });
   });
 
-  it("detects whether ProductContainer has authored child renderings", () => {
-    expect(hasProductContainerContent({})).toBe(false);
-    expect(
-      hasProductContainerContent({
-        "product-container-2": [],
-      }),
-    ).toBe(false);
-    expect(
-      hasProductContainerContent({
-        "product-container-2": [{} as never],
-      }),
-    ).toBe(true);
+  it.each<ComponentProps["rendering"]["placeholders"]>([
+    undefined,
+    {},
+    { "product-container-2": [] },
+  ])(
+    "exposes an empty placeholder without injecting product details: %j",
+    (placeholders) => {
+      const html = renderToStaticMarkup(
+        <ProductContainer
+          {...componentProps({ isEditing: true })}
+          params={{ DynamicPlaceholderId: "2" }}
+          rendering={{ componentName: "ProductContainer", placeholders }}
+        />,
+      );
+
+      expect(html).toContain('data-placeholder="product-container-2"');
+      expect(html).not.toContain("Ava Edge");
+      expect(html).not.toContain("ava-edge.jpg");
+      expect(html).not.toContain("Size");
+      expect(html).not.toContain("Add to cart");
+    },
+  );
+
+  it("passes authored child renderings to the dynamic placeholder", () => {
+    const html = renderToStaticMarkup(
+      <ProductContainer
+        {...componentProps()}
+        params={{ DynamicPlaceholderId: "2" }}
+        rendering={{
+          componentName: "ProductContainer",
+          placeholders: {
+            "product-container-2": [
+              { componentName: "ProductImageGallery" },
+              { componentName: "ProductInfo" },
+              { componentName: "SpecForm" },
+              { componentName: "AddToCart" },
+            ],
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-placeholder="product-container-2"');
+    for (const name of ["ProductImageGallery", "ProductInfo", "SpecForm", "AddToCart"]) {
+      expect(html).toContain(name);
+    }
   });
 
   it("resolves a concrete route and supplies starter mapping", () => {
@@ -263,20 +316,6 @@ describe("product detail component migration", () => {
     expect(html).toContain("ava-edge.jpg");
     expect(html).toContain("Size");
     expect(html).toContain("8");
-  });
-
-  it("renders a complete product detail fallback", () => {
-    const html = renderToStaticMarkup(
-      <ProductDetailFallback
-        {...componentProps()}
-        params={{ RenderingIdentifier: "product-container" }}
-      />,
-    );
-
-    expect(html).toContain("Ava Edge");
-    expect(html).toContain("ava-edge.jpg");
-    expect(html).toContain("Size");
-    expect(html).toContain("Add to cart");
   });
 
   it("disables add-to-cart in editing and preview modes", () => {
